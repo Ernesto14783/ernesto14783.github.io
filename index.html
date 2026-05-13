@@ -28,6 +28,8 @@
 <script type="text/babel">
 const { useState, useEffect, useRef } = React;
 
+const WORKER_URL = "https://cosmic-spirit-proxy.ernesto14783.workers.dev";
+
 const SECTIONS = ["energie", "anker", "bewijs", "dag", "dankbaar", "progressie"];
 const SECTION_LABELS = {
   energie: "Energie van Vandaag",
@@ -69,54 +71,6 @@ function useStorage(key, initial) {
   return [val, set];
 }
 
-// ── API KEY SETUP ──────────────────────────────────────────────────────────
-function ApiKeySetup({ onSave }) {
-  const [key, setKey] = useState("");
-  return (
-    <div style={{ padding: "60px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
-      <h2 style={{ fontSize: 20, fontWeight: 400 }}>Dagenergie instellen</h2>
-      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
-        Voor het dagelijkse energierapport is een Anthropic API-sleutel nodig. Maak gratis een account aan op console.anthropic.com en plak je sleutel hieronder. Hij wordt alleen lokaal opgeslagen op dit apparaat.
-      </p>
-      <input
-        type="password"
-        value={key}
-        onChange={e => setKey(e.target.value)}
-        placeholder="sk-ant-..."
-        style={{
-          width: "100%", padding: "14px 16px",
-          background: "rgba(255,255,255,0.05)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: 12, color: "#fff", fontSize: 14,
-          fontFamily: "Georgia, serif"
-        }}
-      />
-      <button
-        onClick={() => { if (key.startsWith("sk-")) onSave(key); }}
-        style={{
-          padding: "14px 0", borderRadius: 12,
-          background: "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.15)",
-          color: key.startsWith("sk-") ? "#fff" : "rgba(255,255,255,0.3)",
-          fontSize: 14, cursor: "pointer"
-        }}
-      >Opslaan en doorgaan</button>
-      <p style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", lineHeight: 1.6, fontStyle: "italic" }}>
-        Je kunt de app ook gebruiken zonder sleutel. Alleen het energierapport werkt dan niet.
-      </p>
-      <button
-        onClick={() => onSave(null)}
-        style={{
-          padding: "10px 0", borderRadius: 12,
-          background: "transparent", border: "none",
-          color: "rgba(255,255,255,0.25)", fontSize: 13, cursor: "pointer"
-        }}
-      >Overslaan</button>
-    </div>
-  );
-}
-
-// ── ENERGIE ───────────────────────────────────────────────────────────────
 // ── MAAN BEREKENING ───────────────────────────────────────────────────────
 function getMoonData() {
   const now = new Date();
@@ -185,7 +139,7 @@ async function saveToJsonBin(binId, payload) {
 }
 
 // ── ENERGIE ───────────────────────────────────────────────────────────────
-function EnergieSection({ apiKey, onNeedKey }) {
+function EnergieSection() {
   const todayKey = getTodayKey();
   const localKey = `ernesto_energie_${todayKey}`;
   const [reading, setReading] = useState(() => {
@@ -217,7 +171,6 @@ function EnergieSection({ apiKey, onNeedKey }) {
   };
 
   const generateReading = async () => {
-    if (!apiKey) { onNeedKey(); return; }
     setLoading(true); setError(null);
     const moon = getMoonData();
     const prompt = `Je bent een persoonlijke energiegids voor ${ERNESTO.naam}, geboren op ${ERNESTO.geboortedatum} om ${ERNESTO.geboortetijd} in ${ERNESTO.geboorteplaats}.
@@ -258,17 +211,22 @@ Drie tot vier zinnen die alles samenvatten. Benoem zijn grootste kans en uitdagi
 Houd de totale tekst onder de 350 woorden.`;
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch(`${WORKER_URL}/dagrapport`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gebruiker_id: "ernesto",
+          geboortedatum: ERNESTO.geboortedatum,
+          jaardoelstelling: "zelfstandig wonen in een camper, 3000 euro netto per maand",
+          prompt: prompt,
+        }),
       });
       const data = await response.json();
-      const text = data.content?.find(b => b.type === "text")?.text || "";
+      const text = data.rapport || "";
       if (!text) throw new Error();
       await saveReading(parseReading(text));
     } catch {
-      setError("Er ging iets mis. Controleer je API-sleutel en probeer opnieuw.");
+      setError("Er ging iets mis met het laden van het dagrapport. Probeer het opnieuw.");
     } finally { setLoading(false); }
   };
 
@@ -286,21 +244,10 @@ Houd de totale tekst onder de 350 woorden.`;
           }
         }
       } catch {}
-      if (apiKey) generateReading();
+      generateReading();
     };
     tryLoad();
   }, []);
-
-  if (!apiKey) return (
-    <div style={{ textAlign: "center", padding: "60px 0", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
-      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14, lineHeight: 1.7, maxWidth: 280 }}>
-        Voeg een Anthropic API-sleutel toe om je dagelijkse energierapport te activeren.
-      </p>
-      <button onClick={onNeedKey} style={{ padding: "12px 28px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 13, cursor: "pointer" }}>
-        Sleutel instellen
-      </button>
-    </div>
-  );
 
   if (loading) return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, gap: 16 }}>
@@ -537,13 +484,9 @@ function App() {
   const [ankerPhotos, setAnkerPhotos] = useStorage("ernesto_anker_photos", []);
   const [bewijsPhotos, setBewijsPhotos] = useStorage("ernesto_bewijs_photos", []);
   const [dagData, setDagData] = useStorage(`ernesto_dag_${getTodayKey()}`, {});
-  const [apiKey, setApiKey] = useStorage("ernesto_api_key", null);
-  const [showKeySetup, setShowKeySetup] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setTimeout(() => setMounted(true), 50), []);
-
-  const handleSaveKey = (key) => { setApiKey(key); setShowKeySetup(false); };
 
   const dots = [
     { label: "Energie", done: !!localStorage.getItem(`ernesto_energie_${getTodayKey()}`) },
@@ -551,8 +494,6 @@ function App() {
     { label: "Actie", done: dagData.gedaan === true },
     { label: "Dankbaar", done: dagData.dankbaar?.length > 2 && dagData.lachen?.length > 2 },
   ];
-
-  if (showKeySetup) return <ApiKeySetup onSave={handleSaveKey} />;
 
   return (
     <div style={{ minHeight: "100vh", background: "#0d0d0d", fontFamily: "Georgia, serif", color: "#fff", display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", opacity: mounted ? 1 : 0, transition: "opacity 0.6s ease" }}>
@@ -580,7 +521,7 @@ function App() {
 
       <div style={{ padding: "26px 24px", flex: 1 }}>
         {active !== "energie" && <h2 style={{ fontSize: 17, fontWeight: 400, marginBottom: 20, marginTop: 0 }}>{SECTION_LABELS[active]}</h2>}
-        {active === "energie" && <EnergieSection apiKey={apiKey} onNeedKey={() => setShowKeySetup(true)} />}
+        {active === "energie" && <EnergieSection />}
         {active === "anker" && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wie je al bent. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={ankerPhotos} storagePrefix="anker" onAdd={p => setAnkerPhotos(prev => [...prev, p])} onRemove={i => setAnkerPhotos(prev => prev.filter((_, idx) => idx !== i))} /></div>}
         {active === "bewijs" && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wat je al hebt bewogen. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={bewijsPhotos} storagePrefix="bewijs" onAdd={p => setBewijsPhotos(prev => [...prev, p])} onRemove={i => setBewijsPhotos(prev => prev.filter((_, idx) => idx !== i))} /></div>}
         {active === "dag" && <DagSection todayData={dagData} onUpdate={setDagData} />}
@@ -588,12 +529,8 @@ function App() {
         {active === "progressie" && <ProgressieSection />}
       </div>
 
-      <div style={{ padding: "18px 24px 34px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center", display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
+      <div style={{ padding: "18px 24px 34px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
         <p style={{ fontSize: 12, color: "rgba(255,255,255,0.1)", fontStyle: "italic" }}>Elke dag dat je beweegt ben je al daar.</p>
-        <button
-          onClick={() => { setApiKey(null); setShowKeySetup(true); }}
-          style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.15)", fontSize: 11, cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase", padding: "4px 0" }}
-        >API sleutel wijzigen</button>
       </div>
     </div>
   );
