@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Ernesto">
+<title>Ernesto</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: #0d0d0d; color: #fff; font-family: Georgia, serif; min-height: 100vh; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  textarea:focus { outline: none; }
+  button { font-family: Georgia, serif; }
+  ::-webkit-scrollbar { display: none; }
+  scrollbar-width: none;
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+const SECTIONS = ["energie", "anker", "bewijs", "dag", "dankbaar", "progressie"];
+const SECTION_LABELS = {
+  energie: "Energie van Vandaag",
+  anker: "Wie ik al ben",
+  bewijs: "Wat ik al heb bewogen",
+  dag: "Vandaag",
+  dankbaar: "Dankbaarheid & Lachen",
+  progressie: "Progressie",
+};
+const NAV_LABELS = {
+  energie: "Energie", anker: "Wie", bewijs: "Bewijs",
+  dag: "Dag", dankbaar: "Dankb.", progressie: "Voort.",
+};
+const ERNESTO = {
+  naam: "Ernesto Arrendell",
+  geboortedatum: "14 juli 1983",
+  geboorteplaats: "Delft",
+  geboortetijd: "22:49",
+  sterrenbeeld: "Kreeft",
+  humanDesignType: "Manifesting Generator",
+  humanDesignProfile: "1/3",
+  lifePath: 7,
+};
+
+const getTodayKey = () => new Date().toISOString().split("T")[0];
+const getTodayFull = () => new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const formatDate = (key) => new Date(key + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" });
+
+function useStorage(key, initial) {
+  const [val, setVal] = useState(() => {
+    try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : initial; }
+    catch { return initial; }
+  });
+  const set = (v) => {
+    const next = typeof v === "function" ? v(val) : v;
+    setVal(next);
+    localStorage.setItem(key, JSON.stringify(next));
+  };
+  return [val, set];
+}
+
+// ── API KEY SETUP ──────────────────────────────────────────────────────────
+function ApiKeySetup({ onSave }) {
+  const [key, setKey] = useState("");
+  return (
+    <div style={{ padding: "60px 28px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <h2 style={{ fontSize: 20, fontWeight: 400 }}>Dagenergie instellen</h2>
+      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", lineHeight: 1.7 }}>
+        Voor het dagelijkse energierapport is een Anthropic API-sleutel nodig. Maak gratis een account aan op console.anthropic.com en plak je sleutel hieronder. Hij wordt alleen lokaal opgeslagen op dit apparaat.
+      </p>
+      <input
+        type="password"
+        value={key}
+        onChange={e => setKey(e.target.value)}
+        placeholder="sk-ant-..."
+        style={{
+          width: "100%", padding: "14px 16px",
+          background: "rgba(255,255,255,0.05)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 12, color: "#fff", fontSize: 14,
+          fontFamily: "Georgia, serif"
+        }}
+      />
+      <button
+        onClick={() => { if (key.startsWith("sk-")) onSave(key); }}
+        style={{
+          padding: "14px 0", borderRadius: 12,
+          background: "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.15)",
+          color: key.startsWith("sk-") ? "#fff" : "rgba(255,255,255,0.3)",
+          fontSize: 14, cursor: "pointer"
+        }}
+      >Opslaan en doorgaan</button>
+      <p style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", lineHeight: 1.6, fontStyle: "italic" }}>
+        Je kunt de app ook gebruiken zonder sleutel. Alleen het energierapport werkt dan niet.
+      </p>
+      <button
+        onClick={() => onSave(null)}
+        style={{
+          padding: "10px 0", borderRadius: 12,
+          background: "transparent", border: "none",
+          color: "rgba(255,255,255,0.25)", fontSize: 13, cursor: "pointer"
+        }}
+      >Overslaan</button>
+    </div>
+  );
+}
+
+// ── ENERGIE ───────────────────────────────────────────────────────────────
+function EnergieSection({ apiKey, onNeedKey }) {
+  const todayKey = getTodayKey();
+  const cacheKey = `ernesto_energie_${todayKey}`;
+  const [reading, setReading] = useStorage(cacheKey, null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const parseReading = (text) => {
+    const sections = ["Horoscoop", "Human Design", "Numerologie", "The Pattern", "Persoonlijk Weerbericht"];
+    const result = {};
+    sections.forEach((section, i) => {
+      const next = sections[i + 1];
+      const regex = next
+        ? new RegExp(`\\*\\*${section}\\*\\*([\\s\\S]*?)\\*\\*${next}\\*\\*`)
+        : new RegExp(`\\*\\*${section}\\*\\*([\\s\\S]*?)$`);
+      const match = text.match(regex);
+      result[section] = match ? match[1].trim() : "";
+    });
+    return result;
+  };
+
+  const generateReading = async () => {
+    if (!apiKey) { onNeedKey(); return; }
+    setLoading(true); setError(null);
+    const prompt = `Je bent een persoonlijke energiegids voor ${ERNESTO.naam}, geboren op ${ERNESTO.geboortedatum} om ${ERNESTO.geboortetijd} in ${ERNESTO.geboorteplaats}.
+
+Zijn profiel:
+- Sterrenbeeld: ${ERNESTO.sterrenbeeld} (Zon), met Steenbok Ascendant (late avond geboorte)
+- Human Design: ${ERNESTO.humanDesignType}, Profiel ${ERNESTO.humanDesignProfile}
+- Levensgetal (numerologie): ${ERNESTO.lifePath} (de Zoeker, de Mysticus)
+- Huidig doel: succesvol ondernemen, zelfstandig leven in een camper, 3000 netto per maand
+- Beroep: bewustzijnscoach en ceremonieleider (Cosmic Spirit, Theta Session, Maurius)
+
+Vandaag is het ${getTodayFull()}.
+
+Genereer een persoonlijk dagelijks energierapport in het Nederlands. Schrijf warm, direct en concreet. Geen bullet points. Geen uitroeptekens. Geen AI-taal. Spreek Ernesto aan als "je".
+
+Structuur (gebruik exact deze kopjes):
+
+**Horoscoop**
+Twee tot drie zinnen over de astrologische energie van vandaag voor een Kreeft met Steenbok Ascendant.
+
+**Human Design**
+Twee zinnen over hoe zijn Manifesting Generator 1/3 profiel vandaag het beste kan opereren.
+
+**Numerologie**
+Bereken de dagenergie van vandaag en koppel dat aan zijn levensgetal 7. Twee zinnen.
+
+**The Pattern**
+Een intuïtief, psychologisch patroon dat vandaag actief is voor hem. Schrijf dit als een zachte spiegel.
+
+**Persoonlijk Weerbericht**
+Drie tot vier zinnen die alles samenvatten tot één concreet dagadvies. Benoem zijn grootste kans van vandaag en zijn grootste uitdaging. Sluit af met één zin die hem verankert.
+
+Houd de totale tekst onder de 350 woorden.`;
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
+        body: JSON.stringify({ model: "claude-opus-4-5", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+      });
+      const data = await response.json();
+      const text = data.content?.find(b => b.type === "text")?.text || "";
+      if (!text) throw new Error();
+      setReading(parseReading(text));
+    } catch {
+      setError("Er ging iets mis. Controleer je API-sleutel en probeer opnieuw.");
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { if (!reading && apiKey) generateReading(); }, []);
+
+  if (!apiKey) return (
+    <div style={{ textAlign: "center", padding: "60px 0", display: "flex", flexDirection: "column", gap: 16, alignItems: "center" }}>
+      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14, lineHeight: 1.7, maxWidth: 280 }}>
+        Voeg een Anthropic API-sleutel toe om je dagelijkse energierapport te activeren.
+      </p>
+      <button onClick={onNeedKey} style={{ padding: "12px 28px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 13, cursor: "pointer" }}>
+        Sleutel instellen
+      </button>
+    </div>
+  );
+
+  if (loading) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 300, gap: 16 }}>
+      <div style={{ width: 36, height: 36, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.1)", borderTop: "1.5px solid rgba(255,255,255,0.5)", animation: "spin 1.2s linear infinite" }} />
+      <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 13, fontStyle: "italic" }}>Dagenergie wordt berekend...</p>
+    </div>
+  );
+
+  if (error) return (
+    <div style={{ textAlign: "center", padding: "40px 0" }}>
+      <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14, marginBottom: 20 }}>{error}</p>
+      <button onClick={generateReading} style={{ padding: "12px 24px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 13, cursor: "pointer" }}>Opnieuw proberen</button>
+    </div>
+  );
+
+  if (!reading) return null;
+
+  const weerSection = reading["Persoonlijk Weerbericht"];
+  const otherSections = ["Horoscoop", "Human Design", "Numerologie", "The Pattern"];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {weerSection && (
+        <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 16, padding: "20px", marginBottom: 24, borderLeft: "2px solid rgba(255,255,255,0.25)" }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>Persoonlijk Weerbericht</div>
+          <p style={{ fontSize: 15, lineHeight: 1.8, color: "rgba(255,255,255,0.85)", fontStyle: "italic" }}>{weerSection}</p>
+        </div>
+      )}
+      {otherSections.map(section => reading[section] ? (
+        <div key={section} style={{ padding: "18px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>{section}</div>
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: "rgba(255,255,255,0.6)" }}>{reading[section]}</p>
+        </div>
+      ) : null)}
+      <button onClick={generateReading} style={{ marginTop: 28, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(255,255,255,0.22)", fontSize: 12, cursor: "pointer", letterSpacing: "0.06em" }}>
+        Herlaad dagenergie
+      </button>
+    </div>
+  );
+}
+
+// ── LIGHTBOX ──────────────────────────────────────────────────────────────
+function Lightbox({ photo, onClose }) {
+  const [caption, setCaption] = useStorage(`caption_${photo.id}`, "");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(caption);
+
+  const save = () => { setCaption(draft); setEditing(false); };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.93)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, animation: "fadeIn 0.2s ease" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 440 }}>
+        <img src={photo.src} alt="" style={{ width: "100%", borderRadius: 16, objectFit: "contain", maxHeight: "58vh" }} />
+        <div style={{ marginTop: 16 }}>
+          {editing ? (
+            <div>
+              <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)} placeholder="Voeg een tekst toe..."
+                style={{ width: "100%", minHeight: 60, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "#fff", padding: "10px 12px", fontSize: 14, fontFamily: "Georgia, serif", resize: "none", outline: "none" }} />
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <button onClick={save} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 13, cursor: "pointer" }}>Opslaan</button>
+                <button onClick={() => setEditing(false)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>Annuleren</button>
+              </div>
+            </div>
+          ) : (
+            <div onClick={() => { setDraft(caption); setEditing(true); }} style={{ cursor: "pointer", padding: "8px 0" }}>
+              <p style={{ color: caption ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.22)", fontSize: 14, fontStyle: "italic", lineHeight: 1.6 }}>
+                {caption || "Tik om een tekst toe te voegen..."}
+              </p>
+            </div>
+          )}
+        </div>
+        <button onClick={onClose} style={{ marginTop: 20, width: "100%", padding: "12px 0", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.3)", fontSize: 13, cursor: "pointer" }}>Sluiten</button>
+      </div>
+    </div>
+  );
+}
+
+// ── PHOTO GRID ────────────────────────────────────────────────────────────
+function PhotoGrid({ photos, onAdd, onRemove, storagePrefix }) {
+  const inputRef = useRef();
+  const [lightbox, setLightbox] = useState(null);
+
+  const handleFile = (e) => {
+    Array.from(e.target.files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => onAdd({ src: ev.target.result, id: `${storagePrefix}_${Date.now()}_${Math.random().toString(36).slice(2)}` });
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  return (
+    <div>
+      {lightbox && <Lightbox photo={lightbox} onClose={() => setLightbox(null)} />}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+        {photos.map((photo, i) => {
+          const src = typeof photo === "string" ? photo : photo.src;
+          const id = typeof photo === "string" ? `${storagePrefix}_${i}` : photo.id;
+          return (
+            <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: 12, overflow: "hidden", background: "#1a1a1a" }}>
+              <img src={src} alt="" onClick={() => setLightbox({ src, id })} style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "pointer" }} />
+              <button onClick={() => onRemove(i)} style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", width: 24, height: 24, borderRadius: "50%", cursor: "pointer", fontSize: 14, lineHeight: "24px", textAlign: "center" }}>×</button>
+            </div>
+          );
+        })}
+        <button onClick={() => inputRef.current.click()} style={{ aspectRatio: "1", borderRadius: 12, border: "1.5px dashed rgba(255,255,255,0.12)", background: "transparent", color: "rgba(255,255,255,0.25)", fontSize: 28, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+        <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleFile} />
+      </div>
+    </div>
+  );
+}
+
+// ── DAG ───────────────────────────────────────────────────────────────────
+function DagSection({ todayData, onUpdate }) {
+  const [actie, setActie] = useState(todayData.actie || "");
+  const [gedaan, setGedaan] = useState(todayData.gedaan ?? null);
+  const save = (field, value) => onUpdate({ ...todayData, [field]: value });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div>
+        <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 10, letterSpacing: "0.08em", textTransform: "uppercase" }}>Kleinste actie die vandaag iets verschuift</p>
+        <textarea value={actie} onChange={e => setActie(e.target.value)} onBlur={() => save("actie", actie)} placeholder="Schrijf hier..."
+          style={{ width: "100%", minHeight: 80, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, color: "#fff", padding: "12px 14px", fontSize: 15, fontFamily: "Georgia, serif", resize: "none", outline: "none" }} />
+      </div>
+      {actie && (
+        <div>
+          <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 12, letterSpacing: "0.08em", textTransform: "uppercase" }}>Heb ik het gedaan?</p>
+          <div style={{ display: "flex", gap: 12 }}>
+            {[{ label: "Ja", value: true }, { label: "Nee", value: false }].map(opt => (
+              <button key={opt.label} onClick={() => { setGedaan(opt.value); save("gedaan", opt.value); }}
+                style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: gedaan === opt.value ? "1.5px solid rgba(255,255,255,0.55)" : "1.5px solid rgba(255,255,255,0.09)", background: gedaan === opt.value ? "rgba(255,255,255,0.07)" : "transparent", color: gedaan === opt.value ? "#fff" : "rgba(255,255,255,0.28)", fontSize: 15, cursor: "pointer", transition: "all 0.2s" }}>{opt.label}</button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DANKBAAR ──────────────────────────────────────────────────────────────
+function DankbaarSection({ todayData, onUpdate }) {
+  const [dankbaar, setDankbaar] = useState(todayData.dankbaar || "");
+  const [lachen, setLachen] = useState(todayData.lachen || "");
+  const save = (field, value) => onUpdate({ ...todayData, [field]: value });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div>
+        <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 10, letterSpacing: "0.08em", textTransform: "uppercase" }}>Waar ben ik dankbaar voor vandaag?</p>
+        <textarea value={dankbaar} onChange={e => setDankbaar(e.target.value)} onBlur={() => save("dankbaar", dankbaar)} placeholder="Drie dingen, groot of klein..."
+          style={{ width: "100%", minHeight: 80, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, color: "#fff", padding: "12px 14px", fontSize: 15, fontFamily: "Georgia, serif", resize: "none", outline: "none" }} />
+      </div>
+      <div>
+        <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, marginBottom: 10, letterSpacing: "0.08em", textTransform: "uppercase" }}>Wat heeft me vandaag doen lachen?</p>
+        <textarea value={lachen} onChange={e => setLachen(e.target.value)} onBlur={() => save("lachen", lachen)} placeholder="Noteer het moment..."
+          style={{ width: "100%", minHeight: 60, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, color: "#fff", padding: "12px 14px", fontSize: 15, fontFamily: "Georgia, serif", resize: "none", outline: "none" }} />
+      </div>
+    </div>
+  );
+}
+
+// ── PROGRESSIE ────────────────────────────────────────────────────────────
+function ProgressieSection() {
+  const today = getTodayKey();
+  const [history, setHistory] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [streak, setStreak] = useState(0);
+  const [totalDays, setTotalDays] = useState(0);
+
+  useEffect(() => {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith("ernesto_dag_")).sort((a, b) => b.localeCompare(a));
+    const entries = keys.map(k => ({ dateKey: k.replace("ernesto_dag_", ""), data: JSON.parse(localStorage.getItem(k) || "{}") }));
+    setHistory(entries);
+    setTotalDays(entries.filter(e => e.data.actie || e.data.dankbaar || e.data.lachen).length);
+    let count = 0, cursor = new Date();
+    for (let i = 0; i < 365; i++) {
+      const key = cursor.toISOString().split("T")[0];
+      const data = JSON.parse(localStorage.getItem(`ernesto_dag_${key}`) || "{}");
+      if (data.actie || data.dankbaar || data.lachen) { count++; cursor.setDate(cursor.getDate() - 1); }
+      else if (key === today) { cursor.setDate(cursor.getDate() - 1); }
+      else break;
+    }
+    setStreak(count);
+  }, []);
+
+  const isDayComplete = (data) => data.gedaan === true && data.dankbaar && data.lachen;
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 28 }}>
+        {[{ num: streak, label: "op rij" }, { num: totalDays, label: "totaal" }].map((s, i) => (
+          <div key={i} style={{ flex: 1, background: "rgba(255,255,255,0.04)", borderRadius: 16, padding: "18px 16px", textAlign: "center" }}>
+            <div style={{ fontSize: 40, fontWeight: 300, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.num}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 6 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+      {history.length === 0 ? (
+        <p style={{ color: "rgba(255,255,255,0.22)", fontSize: 14, fontStyle: "italic", textAlign: "center", marginTop: 40 }}>Je eerste dag begint vandaag.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {history.map(({ dateKey, data }) => {
+            if (!data.actie && !data.dankbaar && !data.lachen) return null;
+            return (
+              <div key={dateKey}>
+                <button onClick={() => setSelected(selected === dateKey ? null : dateKey)}
+                  style={{ width: "100%", padding: "13px 14px", background: selected === dateKey ? "rgba(255,255,255,0.05)" : "transparent", border: "none", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", color: "#fff" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: "50%", background: isDayComplete(data) ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.18)" }} />
+                    <span style={{ fontSize: 14 }}>{formatDate(dateKey)}</span>
+                  </div>
+                  <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>{selected === dateKey ? "▲" : "▼"}</span>
+                </button>
+                {selected === dateKey && (
+                  <div style={{ padding: "4px 14px 16px 34px", display: "flex", flexDirection: "column", gap: 14 }}>
+                    {data.actie && <div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>Actie</div><div style={{ fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.6 }}>{data.actie}</div>{data.gedaan !== null && <div style={{ fontSize: 12, color: data.gedaan ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.18)", marginTop: 4 }}>{data.gedaan ? "Gedaan" : "Niet gedaan"}</div>}</div>}
+                    {data.dankbaar && <div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>Dankbaarheid</div><div style={{ fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.6 }}>{data.dankbaar}</div></div>}
+                    {data.lachen && <div><div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 5 }}>Lachen</div><div style={{ fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.6 }}>{data.lachen}</div></div>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────
+function App() {
+  const [active, setActive] = useState("energie");
+  const [ankerPhotos, setAnkerPhotos] = useStorage("ernesto_anker_photos", []);
+  const [bewijsPhotos, setBewijsPhotos] = useStorage("ernesto_bewijs_photos", []);
+  const [dagData, setDagData] = useStorage(`ernesto_dag_${getTodayKey()}`, {});
+  const [apiKey, setApiKey] = useStorage("ernesto_api_key", null);
+  const [showKeySetup, setShowKeySetup] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setTimeout(() => setMounted(true), 50), []);
+
+  const handleSaveKey = (key) => { setApiKey(key); setShowKeySetup(false); };
+
+  const dots = [
+    { label: "Energie", done: !!localStorage.getItem(`ernesto_energie_${getTodayKey()}`) },
+    { label: "Wie", done: ankerPhotos.length > 0 },
+    { label: "Actie", done: dagData.gedaan === true },
+    { label: "Dankbaar", done: dagData.dankbaar?.length > 2 && dagData.lachen?.length > 2 },
+  ];
+
+  if (showKeySetup) return <ApiKeySetup onSave={handleSaveKey} />;
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0d0d0d", fontFamily: "Georgia, serif", color: "#fff", display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", opacity: mounted ? 1 : 0, transition: "opacity 0.6s ease" }}>
+      <div style={{ padding: "44px 28px 22px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "rgba(255,255,255,0.22)", textTransform: "uppercase", marginBottom: 8 }}>
+          {new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 400, letterSpacing: "-0.01em" }}>Ernesto</h1>
+        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.22)", margin: "6px 0 0", fontStyle: "italic" }}>Camper. Vrijheid. 3000 per maand.</p>
+        <div style={{ display: "flex", gap: 12, marginTop: 18 }}>
+          {dots.map((d, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: d.done ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.1)", transition: "background 0.4s" }} />
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.18)", letterSpacing: "0.05em" }}>{d.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.06)", overflowX: "auto" }}>
+        {SECTIONS.map(s => (
+          <button key={s} onClick={() => setActive(s)} style={{ flex: 1, padding: "13px 4px", background: "transparent", border: "none", borderBottom: active === s ? "1.5px solid rgba(255,255,255,0.6)" : "1.5px solid transparent", color: active === s ? "#fff" : "rgba(255,255,255,0.22)", fontSize: 10, letterSpacing: "0.07em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap" }}>{NAV_LABELS[s]}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: "26px 24px", flex: 1 }}>
+        {active !== "energie" && <h2 style={{ fontSize: 17, fontWeight: 400, marginBottom: 20, marginTop: 0 }}>{SECTION_LABELS[active]}</h2>}
+        {active === "energie" && <EnergieSection apiKey={apiKey} onNeedKey={() => setShowKeySetup(true)} />}
+        {active === "anker" && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wie je al bent. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={ankerPhotos} storagePrefix="anker" onAdd={p => setAnkerPhotos(prev => [...prev, p])} onRemove={i => setAnkerPhotos(prev => prev.filter((_, idx) => idx !== i))} /></div>}
+        {active === "bewijs" && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wat je al hebt bewogen. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={bewijsPhotos} storagePrefix="bewijs" onAdd={p => setBewijsPhotos(prev => [...prev, p])} onRemove={i => setBewijsPhotos(prev => prev.filter((_, idx) => idx !== i))} /></div>}
+        {active === "dag" && <DagSection todayData={dagData} onUpdate={setDagData} />}
+        {active === "dankbaar" && <DankbaarSection todayData={dagData} onUpdate={setDagData} />}
+        {active === "progressie" && <ProgressieSection />}
+      </div>
+
+      <div style={{ padding: "18px 24px 34px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
+        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.1)", fontStyle: "italic" }}>Elke dag dat je beweegt ben je al daar.</p>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.render(React.createElement(App), document.getElementById("root"));
+</script>
+</body>
+</html>
