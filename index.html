@@ -30,8 +30,10 @@ const { useState, useEffect, useRef } = React;
 
 const WORKER_URL = "https://cosmic-spirit-proxy.ernesto14783.workers.dev";
 
-const SECTIONS = ["energie", "anker", "bewijs", "dag", "dankbaar", "progressie"];
+const SECTIONS = ["home", "maan", "energie", "anker", "bewijs", "dag", "dankbaar", "progressie"];
 const SECTION_LABELS = {
+  home: "Vandaag",
+  maan: "Maan",
   energie: "Energie van Vandaag",
   anker: "Wie ik al ben",
   bewijs: "Wat ik al heb bewogen",
@@ -40,8 +42,8 @@ const SECTION_LABELS = {
   progressie: "Progressie",
 };
 const NAV_LABELS = {
-  energie: "Energie", anker: "Wie", bewijs: "Bewijs",
-  dag: "Dag", dankbaar: "Dankb.", progressie: "Voort.",
+  home: "Thuis", maan: "Maan", energie: "Energie", anker: "Wie",
+  bewijs: "Bewijs", dag: "Dag", dankbaar: "Dankb.", progressie: "Voort.",
 };
 const ERNESTO = {
   naam: "Ernesto Arrendell",
@@ -71,14 +73,59 @@ function useStorage(key, initial) {
   return [val, set];
 }
 
-// ── MAAN BEREKENING ───────────────────────────────────────────────────────
+// ── MAANFASEN 2026 ────────────────────────────────────────────────────────
+const MOON_PHASES = [
+  { type:"vol",   date:new Date(2026,0,3),   sign:"Kreeft" },
+  { type:"nieuw", date:new Date(2026,0,18),  sign:"Steenbok" },
+  { type:"vol",   date:new Date(2026,1,1),   sign:"Leeuw" },
+  { type:"nieuw", date:new Date(2026,1,17),  sign:"Waterman" },
+  { type:"vol",   date:new Date(2026,2,3),   sign:"Maagd" },
+  { type:"nieuw", date:new Date(2026,2,19),  sign:"Vissen" },
+  { type:"vol",   date:new Date(2026,3,2),   sign:"Weegschaal" },
+  { type:"nieuw", date:new Date(2026,3,17),  sign:"Ram" },
+  { type:"vol",   date:new Date(2026,4,1),   sign:"Schorpioen" },
+  { type:"nieuw", date:new Date(2026,4,16),  sign:"Stier" },
+  { type:"vol",   date:new Date(2026,4,31),  sign:"Boogschutter" },
+  { type:"nieuw", date:new Date(2026,5,15),  sign:"Tweelingen" },
+  { type:"vol",   date:new Date(2026,5,30),  sign:"Steenbok" },
+  { type:"nieuw", date:new Date(2026,6,14),  sign:"Kreeft" },
+  { type:"vol",   date:new Date(2026,6,29),  sign:"Waterman" },
+  { type:"nieuw", date:new Date(2026,7,12),  sign:"Leeuw" },
+  { type:"vol",   date:new Date(2026,7,28),  sign:"Vissen" },
+  { type:"nieuw", date:new Date(2026,8,11),  sign:"Maagd" },
+  { type:"vol",   date:new Date(2026,8,26),  sign:"Ram" },
+  { type:"nieuw", date:new Date(2026,9,10),  sign:"Weegschaal" },
+  { type:"vol",   date:new Date(2026,9,26),  sign:"Stier" },
+  { type:"nieuw", date:new Date(2026,10,9),  sign:"Schorpioen" },
+  { type:"vol",   date:new Date(2026,10,24), sign:"Tweelingen" },
+  { type:"nieuw", date:new Date(2026,11,9),  sign:"Boogschutter" },
+  { type:"vol",   date:new Date(2026,11,24), sign:"Kreeft" },
+];
+
+function getCurrentMoonPhase() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const sorted = MOON_PHASES.slice().sort((a,b) => a.date - b.date);
+  let current = sorted[0], next = sorted[1];
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].date <= today) { current = sorted[i]; next = sorted[i+1] || null; }
+  }
+  return { current, next };
+}
+
+function daysUntil(d) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.ceil((d - today) / 86400000);
+}
+
+function fmtShort(d) {
+  return d.toLocaleDateString("nl-NL", { day:"numeric", month:"long", year:"numeric" });
+}
+
+// ── MAAN BEREKENING (voor energie) ────────────────────────────────────────
 function getMoonData() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const day = now.getDate();
-  const JD = 367 * year - Math.floor(7 * (year + Math.floor((month + 9) / 12)) / 4) +
-    Math.floor(275 * month / 9) + day + 1721013.5;
+  const year = now.getFullYear(), month = now.getMonth() + 1, day = now.getDate();
+  const JD = 367*year - Math.floor(7*(year+Math.floor((month+9)/12))/4) + Math.floor(275*month/9) + day + 1721013.5;
   const phase = ((JD - 2451549.5) % 29.53058867 + 29.53058867) % 29.53058867;
   let phaseNL;
   if (phase < 1.85) phaseNL = "Nieuwe Maan";
@@ -93,14 +140,14 @@ function getMoonData() {
   const moonSigns = ["Ram","Stier","Tweelingen","Kreeft","Leeuw","Maagd","Weegschaal","Schorpioen","Boogschutter","Steenbok","Waterman","Vissen"];
   const moonSign = moonSigns[Math.floor(moonLongitude / 30)];
   const digits = `${day}${month}${year}`.split("").map(Number);
-  let sum = digits.reduce((a, b) => a + b, 0);
+  let sum = digits.reduce((a,b) => a+b, 0);
   while (sum > 9 && sum !== 11 && sum !== 22 && sum !== 33) {
-    sum = String(sum).split("").map(Number).reduce((a, b) => a + b, 0);
+    sum = String(sum).split("").map(Number).reduce((a,b) => a+b, 0);
   }
   return { phaseNL, moonSign, dagGetal: sum };
 }
 
-// ── JSONBIN HELPERS ───────────────────────────────────────────────────────
+// ── JSONBIN ───────────────────────────────────────────────────────────────
 const JSONBIN_KEY = "$2a$10$UXIcV9Mh77a6TlJJYV3itec8TmkDXAyVDG7J938J/ci3PSfbSfnVe";
 const JSONBIN_BIN_KEY = "ernesto_dagenergie_bin_id";
 
@@ -109,8 +156,8 @@ async function getOrCreateBinId() {
   if (stored) return stored;
   try {
     const res = await fetch("https://api.jsonbin.io/v3/b", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY, "X-Bin-Name": "ernesto-dagenergie" },
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-Master-Key":JSONBIN_KEY,"X-Bin-Name":"ernesto-dagenergie"},
       body: JSON.stringify({ placeholder: true })
     });
     const data = await res.json();
@@ -122,7 +169,7 @@ async function getOrCreateBinId() {
 
 async function loadFromJsonBin(binId) {
   try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers: { "X-Master-Key": JSONBIN_KEY } });
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, { headers: {"X-Master-Key": JSONBIN_KEY} });
     const data = await res.json();
     return data.record || null;
   } catch { return null; }
@@ -131,14 +178,357 @@ async function loadFromJsonBin(binId) {
 async function saveToJsonBin(binId, payload) {
   try {
     await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_KEY },
+      method:"PUT",
+      headers:{"Content-Type":"application/json","X-Master-Key":JSONBIN_KEY},
       body: JSON.stringify(payload)
     });
   } catch {}
 }
 
-// ── ENERGIE ───────────────────────────────────────────────────────────────
+// ── HOME SECTIE ───────────────────────────────────────────────────────────
+function HomeSection({ onNavigate }) {
+  const todayKey = getTodayKey();
+  const localKey = `ernesto_energie_${todayKey}`;
+  const [weer, setWeer] = useState(null);
+  const [taken, setTaken] = useStorage("ernesto_taken", []);
+  const [routines, setRoutines] = useStorage("ernesto_routines", []);
+  const [nieuweTask, setNieuweTask] = useState("");
+  const [taskType, setTaskType] = useState("dag");
+  const inputRef = useRef();
+
+  // Weerbericht laden vanuit opgeslagen dagrapport
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(localKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && parsed["Persoonlijk Weerbericht"]) setWeer(parsed["Persoonlijk Weerbericht"]);
+      }
+    } catch {}
+  }, []);
+
+  const addTask = () => {
+    const t = nieuweTask.trim();
+    if (!t) return;
+    setTaken(prev => [...prev, { id: Date.now().toString(), tekst: t, type: taskType, done: false }]);
+    setNieuweTask("");
+  };
+
+  const toggleTask = (id) => setTaken(prev => prev.map(t => t.id === id ? {...t, done: !t.done} : t));
+  const deleteTask = (id) => setTaken(prev => prev.filter(t => t.id !== id));
+
+  const toggleRoutine = (id) => {
+    setRoutines(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const done = { ...(r.done || {}) };
+      done[todayKey] = !done[todayKey];
+      return { ...r, done };
+    }));
+  };
+
+  const maanTaken = taken.filter(t => t.type === "maan");
+  const dagTaken = taken.filter(t => t.type === "dag");
+  const activeRoutines = routines.filter(r => r.actief !== false);
+
+  const inputStyle = {
+    flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)",
+    borderRadius: 10, color: "#fff", padding: "10px 12px", fontSize: 14,
+    fontFamily: "Georgia, serif", outline: "none", minWidth: 0,
+  };
+  const selectStyle = {
+    background: "rgba(13,13,13,0.95)", border: "1px solid rgba(255,255,255,0.09)",
+    borderRadius: 10, color: "rgba(255,255,255,0.45)", padding: "10px 8px",
+    fontSize: 12, fontFamily: "Georgia, serif", outline: "none", cursor: "pointer", flexShrink: 0,
+  };
+  const addBtnStyle = {
+    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)",
+    color: "rgba(255,255,255,0.6)", borderRadius: 10, width: 38, height: 38,
+    fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center",
+    justifyContent: "center", flexShrink: 0,
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+      {/* Persoonlijk Weerbericht */}
+      {weer ? (
+        <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: 16, padding: "18px 20px", marginBottom: 28, borderLeft: "2px solid rgba(255,255,255,0.2)" }}>
+          <div style={{ fontSize: 10, color: "rgba(255,255,255,0.28)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>Persoonlijk Weerbericht</div>
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: "rgba(255,255,255,0.75)", fontStyle: "italic" }}>{weer}</p>
+          <button onClick={() => onNavigate("energie")} style={{ marginTop: 12, background: "transparent", border: "none", color: "rgba(255,255,255,0.25)", fontSize: 11, cursor: "pointer", letterSpacing: "0.06em", padding: 0 }}>Volledig dagrapport →</button>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 28, padding: "16px 0" }}>
+          <button onClick={() => onNavigate("energie")} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, color: "rgba(255,255,255,0.35)", fontSize: 13, padding: "12px 18px", cursor: "pointer", width: "100%", fontFamily: "Georgia, serif", fontStyle: "italic" }}>
+            Dagenergie laden →
+          </button>
+        </div>
+      )}
+
+      {/* Taken */}
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>Taken</div>
+
+        {/* Invoer */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <select value={taskType} onChange={e => setTaskType(e.target.value)} style={selectStyle}>
+            <option value="dag">dag</option>
+            <option value="maan">maan</option>
+          </select>
+          <input
+            ref={inputRef}
+            value={nieuweTask}
+            onChange={e => setNieuweTask(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addTask()}
+            placeholder="Taak toevoegen..."
+            style={inputStyle}
+          />
+          <button onClick={addTask} style={addBtnStyle}>+</button>
+        </div>
+
+        {/* Maantaken */}
+        {maanTaken.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Maanwerk</div>
+            {maanTaken.map(t => (
+              <TaskItem key={t.id} task={t} onToggle={toggleTask} onDelete={deleteTask} accentColor="rgba(201,169,110,0.7)" />
+            ))}
+          </div>
+        )}
+
+        {/* Dagtaken */}
+        {dagTaken.length > 0 && (
+          <div style={{ marginTop: maanTaken.length > 0 ? 12 : 0 }}>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>Dagtaken</div>
+            {dagTaken.map(t => (
+              <TaskItem key={t.id} task={t} onToggle={toggleTask} onDelete={deleteTask} accentColor="rgba(255,255,255,0.5)" />
+            ))}
+          </div>
+        )}
+
+        {taken.length === 0 && (
+          <p style={{ color: "rgba(255,255,255,0.18)", fontSize: 13, fontStyle: "italic", padding: "8px 0" }}>Geen taken voor vandaag.</p>
+        )}
+      </div>
+
+      {/* Routines */}
+      {activeRoutines.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 14 }}>Routines</div>
+          {activeRoutines.map(r => {
+            const checkedToday = r.done && r.done[todayKey];
+            const streak = calcStreak(r.done || {});
+            const days7 = getLast7(r.done || {});
+            return (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <button onClick={() => toggleRoutine(r.id)} style={{ width: 20, height: 20, borderRadius: "50%", border: checkedToday ? "1px solid rgba(255,255,255,0.5)" : "1px solid rgba(255,255,255,0.2)", background: checkedToday ? "rgba(255,255,255,0.12)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "rgba(255,255,255,0.7)", flexShrink: 0 }}>
+                  {checkedToday ? "✓" : ""}
+                </button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, color: checkedToday ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.8)", textDecoration: checkedToday ? "line-through" : "none" }}>{r.naam}</div>
+                  <div style={{ display: "flex", gap: 3, marginTop: 5 }}>
+                    {days7.map((d, i) => (
+                      <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: d ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.08)" }} />
+                    ))}
+                    {streak > 0 && <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginLeft: 4 }}>{streak} op rij</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Link naar routines beheren */}
+      <button onClick={() => onNavigate("routines_beheer")} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.18)", fontSize: 11, cursor: "pointer", letterSpacing: "0.06em", padding: "4px 0", textAlign: "left" }}>
+        Routines beheren →
+      </button>
+    </div>
+  );
+}
+
+function TaskItem({ task, onToggle, onDelete, accentColor }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", opacity: task.done ? 0.4 : 1 }}>
+      <button onClick={() => onToggle(task.id)} style={{ width: 18, height: 18, borderRadius: "50%", border: `1px solid ${task.done ? accentColor : "rgba(255,255,255,0.2)"}`, background: task.done ? "rgba(255,255,255,0.08)" : "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: accentColor, flexShrink: 0, marginTop: 2 }}>
+        {task.done ? "✓" : ""}
+      </button>
+      <div style={{ width: 5, height: 5, borderRadius: "50%", background: accentColor, flexShrink: 0, marginTop: 7 }} />
+      <span style={{ flex: 1, fontSize: 14, color: "rgba(255,255,255,0.75)", lineHeight: 1.5, textDecoration: task.done ? "line-through" : "none" }}>{task.tekst}</span>
+      <button onClick={() => onDelete(task.id)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", fontSize: 16, padding: 0, lineHeight: 1, marginTop: 1 }}>×</button>
+    </div>
+  );
+}
+
+function getLast7(done) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Array.from({length:7}, (_,i) => {
+    const d = new Date(today); d.setDate(d.getDate() - (6 - i));
+    return !!done[d.toISOString().split("T")[0]];
+  });
+}
+
+function calcStreak(done) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  let s = 0, d = new Date(today);
+  while (s < 366) {
+    if (done[d.toISOString().split("T")[0]]) { s++; d.setDate(d.getDate()-1); }
+    else break;
+  }
+  return s;
+}
+
+// ── ROUTINES BEHEER ───────────────────────────────────────────────────────
+function RoutinesBeheer({ onBack }) {
+  const [routines, setRoutines] = useStorage("ernesto_routines", []);
+  const [nieuw, setNieuw] = useState("");
+
+  const add = () => {
+    const n = nieuw.trim();
+    if (!n) return;
+    setRoutines(prev => [...prev, { id: Date.now().toString(), naam: n, done: {}, actief: true }]);
+    setNieuw("");
+  };
+
+  const toggle = (id) => setRoutines(prev => prev.map(r => r.id === id ? {...r, actief: !r.actief} : r));
+  const remove = (id) => setRoutines(prev => prev.filter(r => r.id !== id));
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer", padding: "0 0 20px", fontFamily: "Georgia, serif" }}>← Terug</button>
+      <h2 style={{ fontSize: 17, fontWeight: 400, marginBottom: 20 }}>Routines beheren</h2>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <input value={nieuw} onChange={e => setNieuw(e.target.value)} onKeyDown={e => e.key === "Enter" && add()} placeholder="Nieuwe routine..."
+          style={{ flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, color: "#fff", padding: "10px 12px", fontSize: 14, fontFamily: "Georgia, serif", outline: "none" }} />
+        <button onClick={add} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.6)", borderRadius: 10, width: 38, height: 38, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+      </div>
+
+      {routines.length === 0 && <p style={{ color: "rgba(255,255,255,0.2)", fontSize: 14, fontStyle: "italic" }}>Nog geen routines aangemaakt.</p>}
+
+      {routines.map(r => (
+        <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+          <div style={{ flex: 1, fontSize: 14, color: r.actief ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.3)" }}>{r.naam}</div>
+          <button onClick={() => toggle(r.id)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, color: "rgba(255,255,255,0.3)", fontSize: 11, padding: "5px 10px", cursor: "pointer", fontFamily: "Georgia, serif" }}>{r.actief ? "Pauzeer" : "Activeer"}</button>
+          <button onClick={() => remove(r.id)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", fontSize: 16, padding: 0 }}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── MAAN SECTIE ───────────────────────────────────────────────────────────
+function MaanSection() {
+  const { current, next } = getCurrentMoonPhase();
+  const ts = current.date.getTime();
+  const [intentie, setIntentie] = useStorage(`moon_i_${ts}`, "");
+  const [reflectie, setReflectie] = useStorage(`moon_r_${ts}`, "");
+  const [editing, setEditing] = useStorage(`moon_e_${ts}`, true);
+  const [draftI, setDraftI] = useState(intentie);
+  const [draftR, setDraftR] = useState(reflectie);
+
+  const isNieuw = current.type === "nieuw";
+  const symbol = isNieuw ? "🌑" : "🌕";
+  const typeLabel = isNieuw ? "Nieuwe Maan" : "Volle Maan";
+
+  const save = () => {
+    setIntentie(draftI);
+    setReflectie(draftR);
+    setEditing(false);
+  };
+
+  const startEdit = () => {
+    setDraftI(intentie);
+    setDraftR(reflectie);
+    setEditing(true);
+  };
+
+  const taStyle = {
+    width: "100%", minHeight: 90, background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.09)", borderRadius: 12, color: "#fff",
+    padding: "12px 14px", fontSize: 14, fontFamily: "Georgia, serif",
+    resize: "none", outline: "none", lineHeight: 1.7,
+  };
+  const labelStyle = {
+    fontSize: 10, color: "rgba(255,255,255,0.28)", letterSpacing: "0.12em",
+    textTransform: "uppercase", marginBottom: 8,
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+      {/* Huidige maan */}
+      <div style={{ border: `1px solid ${isNieuw ? "rgba(201,169,110,0.3)" : "rgba(212,204,232,0.3)"}`, borderRadius: 16, padding: "20px 22px", marginBottom: 20, background: "rgba(255,255,255,0.02)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 18 }}>
+          <span style={{ fontSize: 30, lineHeight: 1 }}>{symbol}</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 400, color: isNieuw ? "rgba(201,169,110,0.9)" : "rgba(212,204,232,0.9)", marginBottom: 4 }}>{typeLabel} in {current.sign}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", letterSpacing: "0.04em" }}>{fmtShort(current.date)}</div>
+          </div>
+          <div style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)", border: "1px solid rgba(255,255,255,0.1)" }}>nu actief</div>
+        </div>
+
+        {editing ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {isNieuw ? (
+              <div>
+                <div style={labelStyle}>Wat wil je neerzetten of aantrekken?</div>
+                <textarea value={draftI} onChange={e => setDraftI(e.target.value)} placeholder="Schrijf je intentie voor deze nieuwe maan..." style={taStyle} />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <div style={labelStyle}>Wat wil je loslaten?</div>
+                  <textarea value={draftI} onChange={e => setDraftI(e.target.value)} placeholder="Wat mag je loslaten bij dit volle maanlicht..." style={taStyle} />
+                </div>
+                <div>
+                  <div style={labelStyle}>Reflectie — hoe is je maand geweest?</div>
+                  <textarea value={draftR} onChange={e => setDraftR(e.target.value)} placeholder="Kijk terug met zachtheid op de afgelopen cyclus..." style={taStyle} />
+                </div>
+              </>
+            )}
+            <button onClick={save} style={{ padding: "11px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.7)", fontSize: 13, cursor: "pointer" }}>Opslaan</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <div style={labelStyle}>{isNieuw ? "Intentie" : "Loslaten"}</div>
+              <p style={{ fontSize: 14, color: intentie ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.22)", fontStyle: "italic", lineHeight: 1.7 }}>{intentie || "Nog niets ingevuld."}</p>
+            </div>
+            {!isNieuw && (
+              <div>
+                <div style={labelStyle}>Reflectie</div>
+                <p style={{ fontSize: 14, color: reflectie ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.22)", fontStyle: "italic", lineHeight: 1.7 }}>{reflectie || "Nog niets ingevuld."}</p>
+              </div>
+            )}
+            <button onClick={startEdit} style={{ padding: "10px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(255,255,255,0.28)", fontSize: 12, cursor: "pointer" }}>Bewerken</button>
+          </div>
+        )}
+      </div>
+
+      {/* Volgende maan */}
+      {next && (
+        <div style={{ border: "1px solid rgba(255,255,255,0.07)", borderRadius: 16, padding: "18px 22px", opacity: 0.65, background: "rgba(255,255,255,0.015)" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+            <span style={{ fontSize: 26, lineHeight: 1 }}>{next.type === "nieuw" ? "🌑" : "🌕"}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, color: "rgba(255,255,255,0.45)", marginBottom: 4 }}>{next.type === "nieuw" ? "Nieuwe Maan" : "Volle Maan"} in {next.sign}</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", letterSpacing: "0.04em" }}>{fmtShort(next.date)}</div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.22)", marginTop: 8, fontStyle: "italic" }}>
+                {next.type === "nieuw" ? "De volgende cyclus begint. Begin je intentie voor te bereiden." : "De volgende volle maan nadert. Voel al wat je wilt loslaten."}
+              </div>
+            </div>
+            <div style={{ fontSize: 11, padding: "3px 10px", borderRadius: 20, background: "rgba(255,255,255,0.04)", color: "rgba(255,255,255,0.22)", border: "1px solid rgba(255,255,255,0.07)", whiteSpace: "nowrap" }}>
+              over {daysUntil(next.date)} {daysUntil(next.date) === 1 ? "dag" : "dagen"}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ENERGIE SECTIE ────────────────────────────────────────────────────────
 function EnergieSection() {
   const todayKey = getTodayKey();
   const localKey = `ernesto_energie_${todayKey}`;
@@ -157,7 +547,9 @@ function EnergieSection() {
     const result = { generatedOn: todayKey };
     sections.forEach((section, i) => {
       const next = sections[i + 1];
-      const regex = next ? new RegExp(`\\*\\*${section}\\*\\*([\\s\\S]*?)\\*\\*${next}\\*\\*`) : new RegExp(`\\*\\*${section}\\*\\*([\\s\\S]*?)$`);
+      const regex = next
+        ? new RegExp(`\\*\\*${section}\\*\\*([\\s\\S]*?)\\*\\*${next}\\*\\*`)
+        : new RegExp(`\\*\\*${section}\\*\\*([\\s\\S]*?)$`);
       const match = text.match(regex);
       result[section] = match ? match[1].trim() : "";
     });
@@ -239,8 +631,7 @@ Houd de totale tekst onder de 350 woorden.`;
           const remote = await loadFromJsonBin(binId);
           if (remote && remote.generatedOn === todayKey) {
             localStorage.setItem(localKey, JSON.stringify(remote));
-            setReading(remote);
-            return;
+            setReading(remote); return;
           }
         }
       } catch {}
@@ -259,7 +650,7 @@ Houd de totale tekst onder de 350 woorden.`;
   if (error) return (
     <div style={{ textAlign: "center", padding: "40px 0" }}>
       <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 14, marginBottom: 20 }}>{error}</p>
-      <button onClick={generateReading} style={{ padding: "12px 24px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 13, cursor: "pointer" }}>Opnieuw proberen</button>
+      <button onClick={generateReading} style={{ padding: "12px 24px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "transparent", color: "rgba(255,255,255,0.6)", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Opnieuw proberen</button>
     </div>
   );
 
@@ -282,7 +673,7 @@ Houd de totale tekst onder de 350 woorden.`;
           <p style={{ fontSize: 14, lineHeight: 1.8, color: "rgba(255,255,255,0.6)" }}>{reading[section]}</p>
         </div>
       ) : null)}
-      <button onClick={generateReading} style={{ marginTop: 28, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(255,255,255,0.22)", fontSize: 12, cursor: "pointer", letterSpacing: "0.06em" }}>
+      <button onClick={generateReading} style={{ marginTop: 28, padding: "12px 0", borderRadius: 12, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "rgba(255,255,255,0.22)", fontSize: 12, cursor: "pointer", letterSpacing: "0.06em", fontFamily: "Georgia, serif" }}>
         Herlaad dagenergie
       </button>
     </div>
@@ -294,7 +685,6 @@ function Lightbox({ photo, onClose }) {
   const [caption, setCaption] = useStorage(`caption_${photo.id}`, "");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(caption);
-
   const save = () => { setCaption(draft); setEditing(false); };
 
   return (
@@ -307,8 +697,8 @@ function Lightbox({ photo, onClose }) {
               <textarea autoFocus value={draft} onChange={e => setDraft(e.target.value)} placeholder="Voeg een tekst toe..."
                 style={{ width: "100%", minHeight: 60, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "#fff", padding: "10px 12px", fontSize: 14, fontFamily: "Georgia, serif", resize: "none", outline: "none" }} />
               <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <button onClick={save} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 13, cursor: "pointer" }}>Opslaan</button>
-                <button onClick={() => setEditing(false)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer" }}>Annuleren</button>
+                <button onClick={save} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Opslaan</button>
+                <button onClick={() => setEditing(false)} style={{ flex: 1, padding: "10px 0", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.35)", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Annuleren</button>
               </div>
             </div>
           ) : (
@@ -319,7 +709,7 @@ function Lightbox({ photo, onClose }) {
             </div>
           )}
         </div>
-        <button onClick={onClose} style={{ marginTop: 20, width: "100%", padding: "12px 0", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.3)", fontSize: 13, cursor: "pointer" }}>Sluiten</button>
+        <button onClick={onClose} style={{ marginTop: 20, width: "100%", padding: "12px 0", borderRadius: 10, background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.3)", fontSize: 13, cursor: "pointer", fontFamily: "Georgia, serif" }}>Sluiten</button>
       </div>
     </div>
   );
@@ -379,7 +769,7 @@ function DagSection({ todayData, onUpdate }) {
           <div style={{ display: "flex", gap: 12 }}>
             {[{ label: "Ja", value: true }, { label: "Nee", value: false }].map(opt => (
               <button key={opt.label} onClick={() => { setGedaan(opt.value); save("gedaan", opt.value); }}
-                style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: gedaan === opt.value ? "1.5px solid rgba(255,255,255,0.55)" : "1.5px solid rgba(255,255,255,0.09)", background: gedaan === opt.value ? "rgba(255,255,255,0.07)" : "transparent", color: gedaan === opt.value ? "#fff" : "rgba(255,255,255,0.28)", fontSize: 15, cursor: "pointer", transition: "all 0.2s" }}>{opt.label}</button>
+                style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: gedaan === opt.value ? "1.5px solid rgba(255,255,255,0.55)" : "1.5px solid rgba(255,255,255,0.09)", background: gedaan === opt.value ? "rgba(255,255,255,0.07)" : "transparent", color: gedaan === opt.value ? "#fff" : "rgba(255,255,255,0.28)", fontSize: 15, cursor: "pointer", transition: "all 0.2s", fontFamily: "Georgia, serif" }}>{opt.label}</button>
             ))}
           </div>
         </div>
@@ -455,7 +845,7 @@ function ProgressieSection() {
             return (
               <div key={dateKey}>
                 <button onClick={() => setSelected(selected === dateKey ? null : dateKey)}
-                  style={{ width: "100%", padding: "13px 14px", background: selected === dateKey ? "rgba(255,255,255,0.05)" : "transparent", border: "none", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", color: "#fff" }}>
+                  style={{ width: "100%", padding: "13px 14px", background: selected === dateKey ? "rgba(255,255,255,0.05)" : "transparent", border: "none", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", color: "#fff", fontFamily: "Georgia, serif" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <div style={{ width: 7, height: 7, borderRadius: "50%", background: isDayComplete(data) ? "rgba(255,255,255,0.65)" : "rgba(255,255,255,0.18)" }} />
                     <span style={{ fontSize: 14 }}>{formatDate(dateKey)}</span>
@@ -480,13 +870,30 @@ function ProgressieSection() {
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────
 function App() {
-  const [active, setActive] = useState("energie");
+  const [active, setActive] = useState("home");
+  const [routinesBeheer, setRoutinesBeheer] = useState(false);
   const [ankerPhotos, setAnkerPhotos] = useStorage("ernesto_anker_photos", []);
   const [bewijsPhotos, setBewijsPhotos] = useStorage("ernesto_bewijs_photos", []);
   const [dagData, setDagData] = useStorage(`ernesto_dag_${getTodayKey()}`, {});
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setTimeout(() => setMounted(true), 50), []);
+
+  const navigate = (target) => {
+    if (target === "routines_beheer") { setRoutinesBeheer(true); return; }
+    setActive(target);
+  };
+
+  const navItems = [
+    { key: "home",       label: "Thuis" },
+    { key: "maan",       label: "Maan" },
+    { key: "energie",    label: "Energie" },
+    { key: "anker",      label: "Wie" },
+    { key: "bewijs",     label: "Bewijs" },
+    { key: "dag",        label: "Dag" },
+    { key: "dankbaar",   label: "Dankb." },
+    { key: "progressie", label: "Voort." },
+  ];
 
   const dots = [
     { label: "Energie", done: !!localStorage.getItem(`ernesto_energie_${getTodayKey()}`) },
@@ -495,8 +902,16 @@ function App() {
     { label: "Dankbaar", done: dagData.dankbaar?.length > 2 && dagData.lachen?.length > 2 },
   ];
 
+  const sectionTitles = {
+    home: null, maan: "Maan", energie: null,
+    anker: "Wie ik al ben", bewijs: "Wat ik al heb bewogen",
+    dag: "Vandaag", dankbaar: "Dankbaarheid & Lachen", progressie: "Progressie",
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "#0d0d0d", fontFamily: "Georgia, serif", color: "#fff", display: "flex", flexDirection: "column", maxWidth: 480, margin: "0 auto", opacity: mounted ? 1 : 0, transition: "opacity 0.6s ease" }}>
+
+      {/* Header */}
       <div style={{ padding: "44px 28px 22px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "rgba(255,255,255,0.22)", textTransform: "uppercase", marginBottom: 8 }}>
           {new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
@@ -513,22 +928,36 @@ function App() {
         </div>
       </div>
 
+      {/* Nav */}
       <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.06)", overflowX: "auto" }}>
-        {SECTIONS.map(s => (
-          <button key={s} onClick={() => setActive(s)} style={{ flex: 1, padding: "13px 4px", background: "transparent", border: "none", borderBottom: active === s ? "1.5px solid rgba(255,255,255,0.6)" : "1.5px solid transparent", color: active === s ? "#fff" : "rgba(255,255,255,0.22)", fontSize: 10, letterSpacing: "0.07em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap" }}>{NAV_LABELS[s]}</button>
+        {navItems.map(item => (
+          <button key={item.key} onClick={() => { setRoutinesBeheer(false); setActive(item.key); }}
+            style={{ flex: 1, padding: "13px 4px", background: "transparent", border: "none", borderBottom: active === item.key && !routinesBeheer ? "1.5px solid rgba(255,255,255,0.6)" : "1.5px solid transparent", color: active === item.key && !routinesBeheer ? "#fff" : "rgba(255,255,255,0.22)", fontSize: 10, letterSpacing: "0.07em", textTransform: "uppercase", cursor: "pointer", transition: "all 0.2s", whiteSpace: "nowrap", fontFamily: "Georgia, serif" }}>
+            {item.label}
+          </button>
         ))}
       </div>
 
+      {/* Content */}
       <div style={{ padding: "26px 24px", flex: 1 }}>
-        {active !== "energie" && <h2 style={{ fontSize: 17, fontWeight: 400, marginBottom: 20, marginTop: 0 }}>{SECTION_LABELS[active]}</h2>}
-        {active === "energie" && <EnergieSection />}
-        {active === "anker" && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wie je al bent. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={ankerPhotos} storagePrefix="anker" onAdd={p => setAnkerPhotos(prev => [...prev, p])} onRemove={i => setAnkerPhotos(prev => prev.filter((_, idx) => idx !== i))} /></div>}
-        {active === "bewijs" && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wat je al hebt bewogen. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={bewijsPhotos} storagePrefix="bewijs" onAdd={p => setBewijsPhotos(prev => [...prev, p])} onRemove={i => setBewijsPhotos(prev => prev.filter((_, idx) => idx !== i))} /></div>}
-        {active === "dag" && <DagSection todayData={dagData} onUpdate={setDagData} />}
-        {active === "dankbaar" && <DankbaarSection todayData={dagData} onUpdate={setDagData} />}
-        {active === "progressie" && <ProgressieSection />}
+        {routinesBeheer ? (
+          <RoutinesBeheer onBack={() => setRoutinesBeheer(false)} />
+        ) : (
+          <>
+            {sectionTitles[active] && <h2 style={{ fontSize: 17, fontWeight: 400, marginBottom: 20, marginTop: 0 }}>{sectionTitles[active]}</h2>}
+            {active === "home"       && <HomeSection onNavigate={navigate} />}
+            {active === "maan"       && <MaanSection />}
+            {active === "energie"    && <EnergieSection />}
+            {active === "anker"      && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wie je al bent. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={ankerPhotos} storagePrefix="anker" onAdd={p => setAnkerPhotos(prev => [...prev, p])} onRemove={i => setAnkerPhotos(prev => prev.filter((_,idx) => idx !== i))} /></div>}
+            {active === "bewijs"     && <div><p style={{ color: "rgba(255,255,255,0.3)", fontSize: 14, marginBottom: 20, lineHeight: 1.6, fontStyle: "italic" }}>Foto's van wat je al hebt bewogen. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={bewijsPhotos} storagePrefix="bewijs" onAdd={p => setBewijsPhotos(prev => [...prev, p])} onRemove={i => setBewijsPhotos(prev => prev.filter((_,idx) => idx !== i))} /></div>}
+            {active === "dag"        && <DagSection todayData={dagData} onUpdate={setDagData} />}
+            {active === "dankbaar"   && <DankbaarSection todayData={dagData} onUpdate={setDagData} />}
+            {active === "progressie" && <ProgressieSection />}
+          </>
+        )}
       </div>
 
+      {/* Footer */}
       <div style={{ padding: "18px 24px 34px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
         <p style={{ fontSize: 12, color: "rgba(255,255,255,0.1)", fontStyle: "italic" }}>Elke dag dat je beweegt ben je al daar.</p>
       </div>
