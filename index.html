@@ -487,8 +487,12 @@ function App() {
         {active === "progressie" && <ProgressieSection />}
       </div>
 
-      <div style={{ padding: "18px 24px 34px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
+      <div style={{ padding: "18px 24px 34px", borderTop: "1px solid rgba(255,255,255,0.06)", textAlign: "center", display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
         <p style={{ fontSize: 12, color: "rgba(255,255,255,0.1)", fontStyle: "italic" }}>Elke dag dat je beweegt ben je al daar.</p>
+        <button
+          onClick={() => { setApiKey(null); setShowKeySetup(true); }}
+          style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.15)", fontSize: 11, cursor: "pointer", letterSpacing: "0.08em", textTransform: "uppercase", padding: "4px 0" }}
+        >API sleutel wijzigen</button>
       </div>
     </div>
   );
