@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Cosmic Spirit — Kennisbeheer</title>
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -18,9 +19,39 @@
   }
   body { background:var(--bg); color:var(--text); font-family:'Quicksand',sans-serif; min-height:100vh; }
   @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
   button { font-family:'Quicksand',sans-serif; cursor:pointer; }
   input, textarea { font-family:'Quicksand',sans-serif; }
-  input:focus, textarea:focus { outline:none; }
+  input:focus, textarea:focus { outline:none; box-shadow: 0 0 0 2px rgba(201,169,110,0.25); }
+
+  .drop-zone {
+    border: 2px dashed var(--border2);
+    border-radius: 12px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--accent2);
+  }
+  .drop-zone input[type="file"] { display: none; }
+
+  .voortgang {
+    background: var(--bg2);
+    border-radius: 8px;
+    height: 6px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .voortgang-balk {
+    height: 100%;
+    border-radius: 8px;
+    transition: width 0.4s ease;
+    background: var(--accent);
+  }
 </style>
 </head>
 <body>
@@ -29,9 +60,15 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script type="text/babel">
-const { useState, useEffect } = React;
+const { useState, useEffect, useRef } = React;
 
 const WORKER = "https://cosmic-spirit-proxy.ernesto14783.workers.dev";
+
+// PDF.js worker instellen
+if (typeof pdfjsLib !== "undefined") {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
 
 const AGENTEN = [
   { key:"astrologie",    label:"Astrologie",    kleur:"var(--astro)" },
@@ -44,7 +81,7 @@ const AGENTEN = [
 const S = {
   card: { background:"var(--card)", borderRadius:16, padding:"24px", border:"1px solid var(--border)" },
   label: { fontSize:11, color:"var(--text3)", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8, fontWeight:600, display:"block" },
-  input: { width:"100%", background:"var(--bg)", border:"1px solid var(--border2)", borderRadius:10, color:"var(--text)", padding:"11px 14px", fontSize:14, fontWeight:400 },
+  input: { width:"100%", background:"var(--bg)", border:"1px solid var(--border2)", borderRadius:10, color:"var(--text)", padding:"11px 14px", fontSize:14, fontWeight:400, transition:"box-shadow 0.2s" },
 };
 
 function btn(kleur, disabled) {
@@ -56,6 +93,21 @@ function btn(kleur, disabled) {
     cursor: disabled ? "default" : "pointer",
     transition:"all 0.2s",
   };
+}
+
+// PDF tekst extraheren in de browser
+async function leespdf(file) {
+  if (typeof pdfjsLib === "undefined") throw new Error("PDF.js niet geladen");
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let volledigeTekst = "";
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const pagina = await pdf.getPage(i);
+    const content = await pagina.getTextContent();
+    const paginaTekst = content.items.map(item => item.str).join(" ");
+    volledigeTekst += paginaTekst + "\n";
+  }
+  return volledigeTekst.trim();
 }
 
 // ── LOGIN ─────────────────────────────────────────────────────────────────
@@ -109,7 +161,6 @@ function LoginScherm({ onLogin }) {
 // ── HOOFD APP ─────────────────────────────────────────────────────────────
 function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem("admin_token") || null);
-
   if (!token) return <LoginScherm onLogin={setToken} />;
   return <Beheer token={token} onLogout={() => { sessionStorage.removeItem("admin_token"); setToken(null); }} />;
 }
@@ -121,13 +172,19 @@ function Beheer({ token, onLogout }) {
   const [url, setUrl] = useState("");
   const [tekst, setTekst] = useState("");
   const [categorie, setCategorie] = useState("");
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState(null); // null | loading | success | error
   const [bericht, setBericht] = useState("");
+  const [detail, setDetail] = useState(""); // uitgebreide foutinfo
+  const [crawlInfo, setCrawlInfo] = useState(null); // { paginas, totaal_gevonden, tekens }
   const [items, setItems] = useState([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [pdfBestand, setPdfBestand] = useState(null);
+  const [pdfNaam, setPdfNaam] = useState("");
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef();
 
   const actAgent = AGENTEN.find(a => a.key === agent);
-
   const headers = { "Content-Type": "application/json", "X-Admin-Token": token };
 
   useEffect(() => { laadItems(); }, [agent]);
@@ -155,14 +212,40 @@ function Beheer({ token, onLogout }) {
     setItems(prev => prev.filter(i => i.id !== id));
   };
 
+  const verwerkPdf = async (file) => {
+    if (!file || file.type !== "application/pdf") {
+      setStatus("error");
+      setBericht("Alleen PDF-bestanden worden ondersteund.");
+      return;
+    }
+    setPdfLoading(true);
+    setPdfNaam(file.name);
+    try {
+      const tekst = await leespdf(file);
+      if (tekst.length < 50) throw new Error("PDF bevat te weinig leesbare tekst.");
+      setPdfBestand(tekst);
+      setTekst(tekst);
+      setStatus(null);
+    } catch (e) {
+      setStatus("error");
+      setBericht("PDF kon niet worden gelezen: " + e.message);
+      setPdfNaam("");
+    }
+    setPdfLoading(false);
+  };
+
   const voegToe = async () => {
     setStatus("loading");
+    setDetail("");
+    setCrawlInfo(null);
+
     try {
-      const body = {
-        agent,
-        categorie: categorie || "Algemeen",
-        ...(tab === "url" ? { bronUrl: url.trim() } : { tekst: tekst.trim() }),
-      };
+      let body;
+      if (tab === "url") {
+        body = { agent, categorie: categorie || "Algemeen", bronUrl: url.trim() };
+      } else {
+        body = { agent, categorie: categorie || "Algemeen", tekst: tekst.trim() };
+      }
 
       const res = await fetch(`${WORKER}/leer`, {
         method: "POST",
@@ -170,26 +253,47 @@ function Beheer({ token, onLogout }) {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        const rawText = await res.text();
+        setStatus("error");
+        setBericht("Onverwacht antwoord van de server.");
+        setDetail(`HTTP ${res.status} — ${rawText.substring(0, 300)}`);
+        return;
+      }
 
       if (data.success) {
         setStatus("success");
-        setBericht(`Opgeslagen — ${data.tekens} tekens toegevoegd aan ${actAgent.label}.`);
-        setUrl(""); setTekst(""); setCategorie("");
+        if (data.paginas && data.paginas > 1) {
+          setCrawlInfo({ paginas: data.paginas, totaal: data.totaal_gevonden, tekens: data.tekens });
+          setBericht(`${data.paginas} pagina's opgeslagen voor ${actAgent.label}.`);
+        } else {
+          setBericht(`Opgeslagen — ${data.tekens} tekens toegevoegd aan ${actAgent.label}.`);
+        }
+        setUrl(""); setTekst(""); setCategorie(""); setPdfBestand(null); setPdfNaam("");
         laadItems();
         setScherm("kennisbank");
-        setTimeout(() => setStatus(null), 4000);
+        setTimeout(() => setStatus(null), 6000);
       } else {
         setStatus("error");
         setBericht(data.error || "Onbekende fout.");
+        if (data.detail) setDetail(data.detail);
+        if (data.fouten && data.fouten.length > 0) {
+          setDetail("Mislukte pagina's:\n" + data.fouten.join("\n"));
+        }
       }
     } catch (err) {
       setStatus("error");
-      setBericht("Verbinding mislukt: " + err.message);
+      setBericht("Verbinding mislukt.");
+      setDetail(err.message);
     }
   };
 
-  const kanOpslaan = status !== "loading" && (tab === "url" ? url.trim().length > 8 : tekst.trim().length > 50);
+  const kanOpslaan = status !== "loading" && !pdfLoading && (
+    tab === "url" ? url.trim().length > 8 : tekst.trim().length > 50
+  );
 
   return (
     <div style={{ maxWidth:580, margin:"0 auto", padding:"32px 16px 60px" }}>
@@ -236,13 +340,13 @@ function Beheer({ token, onLogout }) {
 
       {/* TOEVOEGEN */}
       {scherm === "toevoegen" && (
-        <div>
+        <div style={{ animation:"fadeIn 0.2s ease" }}>
           <div style={{ display:"flex", gap:8, marginBottom:20 }}>
             {[
               { key:"url",   label:"🌐 Website / URL" },
-              { key:"tekst", label:"✏️ Tekst / PDF inhoud" },
+              { key:"tekst", label:"✏️ Tekst / PDF" },
             ].map(t => (
-              <button key={t.key} onClick={() => setTab(t.key)} style={{
+              <button key={t.key} onClick={() => { setTab(t.key); setStatus(null); }} style={{
                 flex:1, padding:"11px", borderRadius:10,
                 border:`1.5px solid ${tab===t.key ? actAgent.kleur : "var(--border2)"}`,
                 background: tab===t.key ? `${actAgent.kleur}15` : "transparent",
@@ -252,6 +356,7 @@ function Beheer({ token, onLogout }) {
             ))}
           </div>
 
+          {/* URL TAB */}
           {tab === "url" && (
             <div style={{ marginBottom:16 }}>
               <span style={S.label}>Website URL</span>
@@ -262,21 +367,63 @@ function Beheer({ token, onLogout }) {
                 style={S.input}
               />
               <p style={{ fontSize:12, color:"var(--text3)", marginTop:6, lineHeight:1.6 }}>
-                De agent leest de pagina automatisch uit en slaat de inhoud op.
+                De agent leest de pagina en alle subpagina's automatisch uit (max. 30 pagina's).
               </p>
             </div>
           )}
 
+          {/* TEKST / PDF TAB */}
           {tab === "tekst" && (
             <div style={{ marginBottom:16 }}>
-              <span style={S.label}>Tekst of PDF inhoud</span>
+              {/* PDF Drop Zone */}
+              <span style={S.label}>PDF uploaden</span>
+              <div
+                className={`drop-zone${dragOver ? " drag-over" : ""}`}
+                onClick={() => fileRef.current?.click()}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => {
+                  e.preventDefault(); setDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) verwerkPdf(file);
+                }}
+                style={{ marginBottom:12 }}
+              >
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  ref={fileRef}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) verwerkPdf(f); }}
+                />
+                {pdfLoading ? (
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10, color:"var(--text2)" }}>
+                    <div style={{ width:18, height:18, borderRadius:"50%", border:"2px solid var(--bg2)", borderTop:`2px solid ${actAgent.kleur}`, animation:"spin 1s linear infinite" }}/>
+                    <span style={{ fontSize:13 }}>PDF uitlezen...</span>
+                  </div>
+                ) : pdfNaam ? (
+                  <div>
+                    <div style={{ fontSize:20, marginBottom:4 }}>📄</div>
+                    <div style={{ fontSize:13, fontWeight:600, color:"var(--green)" }}>{pdfNaam}</div>
+                    <div style={{ fontSize:11, color:"var(--text3)", marginTop:2 }}>{tekst.length.toLocaleString()} tekens uitgelezen</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontSize:24, marginBottom:6 }}>📎</div>
+                    <div style={{ fontSize:13, color:"var(--text2)", fontWeight:500 }}>Sleep een PDF hierheen of klik om te uploaden</div>
+                    <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>De tekst wordt direct in je browser uitgelezen</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Of handmatig tekst plakken */}
+              <span style={S.label}>Of plak tekst direct</span>
               <textarea
                 value={tekst}
-                onChange={e => setTekst(e.target.value)}
+                onChange={e => { setTekst(e.target.value); if (pdfNaam) { setPdfNaam(""); setPdfBestand(null); } }}
                 placeholder="Plak hier tekst, een samenvatting van een boek, of gekopieerde inhoud uit een PDF..."
-                style={{ ...S.input, minHeight:160, resize:"vertical", lineHeight:1.7 }}
+                style={{ ...S.input, minHeight:140, resize:"vertical", lineHeight:1.7 }}
               />
-              <p style={{ fontSize:11, color:"var(--text3)", marginTop:4, textAlign:"right" }}>{tekst.length} tekens</p>
+              <p style={{ fontSize:11, color:"var(--text3)", marginTop:4, textAlign:"right" }}>{tekst.length.toLocaleString()} tekens</p>
             </div>
           )}
 
@@ -290,14 +437,26 @@ function Beheer({ token, onLogout }) {
             />
           </div>
 
+          {/* Status meldingen */}
           {status === "success" && (
-            <div style={{ background:"rgba(122,168,139,0.15)", border:"1px solid rgba(122,168,139,0.4)", borderRadius:10, padding:"12px 16px", fontSize:13, color:"var(--green)", fontWeight:500, marginBottom:16 }}>
-              ✓ {bericht}
+            <div style={{ background:"rgba(122,168,139,0.15)", border:"1px solid rgba(122,168,139,0.4)", borderRadius:10, padding:"12px 16px", marginBottom:16, animation:"fadeIn 0.2s ease" }}>
+              <div style={{ fontSize:13, color:"var(--green)", fontWeight:600 }}>✓ {bericht}</div>
+              {crawlInfo && (
+                <div style={{ fontSize:12, color:"var(--text2)", marginTop:6 }}>
+                  {crawlInfo.totaal} pagina's gevonden · {crawlInfo.paginas} opgeslagen · {crawlInfo.tekens?.toLocaleString()} tekens totaal
+                </div>
+              )}
             </div>
           )}
+
           {status === "error" && (
-            <div style={{ background:"rgba(192,57,43,0.1)", border:"1px solid rgba(192,57,43,0.3)", borderRadius:10, padding:"12px 16px", fontSize:13, color:"var(--red)", fontWeight:500, marginBottom:16 }}>
-              ✕ {bericht}
+            <div style={{ background:"rgba(192,57,43,0.08)", border:"1px solid rgba(192,57,43,0.25)", borderRadius:10, padding:"12px 16px", marginBottom:16, animation:"fadeIn 0.2s ease" }}>
+              <div style={{ fontSize:13, color:"var(--red)", fontWeight:600 }}>✕ {bericht}</div>
+              {detail && (
+                <pre style={{ fontSize:11, color:"var(--text2)", marginTop:8, whiteSpace:"pre-wrap", lineHeight:1.6, fontFamily:"monospace", background:"rgba(0,0,0,0.04)", borderRadius:6, padding:"8px 10px" }}>
+                  {detail}
+                </pre>
+              )}
             </div>
           )}
 
@@ -305,7 +464,7 @@ function Beheer({ token, onLogout }) {
             {status === "loading" ? (
               <span style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
                 <span style={{ width:16, height:16, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.3)", borderTop:"2px solid #fff", animation:"spin 1s linear infinite", display:"inline-block" }}/>
-                Bezig met uitlezen...
+                {tab === "url" ? "Pagina's worden gelezen..." : "Bezig met opslaan..."}
               </span>
             ) : "Toevoegen aan kennisbank"}
           </button>
@@ -314,7 +473,7 @@ function Beheer({ token, onLogout }) {
 
       {/* KENNISBANK */}
       {scherm === "kennisbank" && (
-        <div>
+        <div style={{ animation:"fadeIn 0.2s ease" }}>
           {itemsLoading ? (
             <div style={{ display:"flex", justifyContent:"center", padding:"40px 0" }}>
               <div style={{ width:28, height:28, borderRadius:"50%", border:"2px solid var(--bg2)", borderTop:`2px solid ${actAgent.kleur}`, animation:"spin 1.2s linear infinite" }}/>
@@ -357,7 +516,7 @@ function KennisItem({ item, kleur, onVerwijder }) {
           </div>
           <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>
             {new Date(item.aangemaakt_op).toLocaleDateString("nl-NL", { day:"numeric", month:"long", year:"numeric" })}
-            {item.inhoud && ` · ${item.inhoud.length} tekens`}
+            {item.inhoud && ` · ${item.inhoud.length.toLocaleString()} tekens`}
           </div>
         </div>
         <span style={{ fontSize:11, color:"var(--text3)", flexShrink:0 }}>{open ? "▲" : "▼"}</span>
