@@ -6,26 +6,22 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Kennisbeheer">
 <title>Cosmic Spirit — Kennisbeheer</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg:#f7f4ef; --bg2:#eeeae2; --card:#ffffff;
+    --bg:#f7f4ef; --bg2:#eeeae2; --card:#fff;
     --border:rgba(0,0,0,0.07); --border2:rgba(0,0,0,0.13);
     --text:#2c2825; --text2:#7a7068; --text3:#b0a898;
     --accent:#c9a96e; --accent2:rgba(201,169,110,0.13);
     --astro:#7b9ea8; --hd:#8b7fa8; --num:#a8896a; --bew:#7aa88b; --over:#c9a96e;
+    --green:#7aa88b; --red:#c0392b;
   }
-  body { background:var(--bg); color:var(--text); font-family:'Quicksand',sans-serif; font-weight:400; min-height:100vh; }
+  body { background:var(--bg); color:var(--text); font-family:'Quicksand',sans-serif; min-height:100vh; }
   @keyframes spin { to { transform:rotate(360deg); } }
-  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
-  input:focus, textarea:focus, select:focus { outline:none; }
   button { font-family:'Quicksand',sans-serif; cursor:pointer; }
-  ::-webkit-scrollbar { width:4px; }
-  ::-webkit-scrollbar-track { background:transparent; }
-  ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+  input, textarea, select { font-family:'Quicksand',sans-serif; }
+  input:focus, textarea:focus { outline:none; }
 </style>
 </head>
 <body>
@@ -33,399 +29,290 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script type="text/babel">
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect } = React;
 
-const SUPABASE_URL  = "https://glvpyebivwsjqsrbfank.supabase.co";
-const SUPABASE_ANON = "sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L";
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+const WORKER = "https://cosmic-spirit-proxy.ernesto14783.workers.dev";
 
 const AGENTEN = [
-  {
-    key:"astrologie",
-    label:"Astrologie",
-    kleur:"var(--astro)",
-    omschrijving:"Sterrenbeelden, planeten, transits, maanfasen, maantekens",
-    categorieen:["Sterrenbeeld","Planeet","Transit","Maanfase","Maanteken","Aspect","Algemeen"]
-  },
-  {
-    key:"human_design",
-    label:"Human Design",
-    kleur:"var(--hd)",
-    omschrijving:"Types, profielen, centra, autoriteit, transits",
-    categorieen:["Type","Profiel","Centrum","Autoriteit","Transit","Poort","Kanaal","Algemeen"]
-  },
-  {
-    key:"numerologie",
-    label:"Numerologie",
-    kleur:"var(--num)",
-    omschrijving:"Levensgetal, meestergetallen, daggetallen, jaarcycli",
-    categorieen:["Levensgetal","Meestergetal","Daggetal","Maandgetal","Persoonlijk jaar","Algemeen"]
-  },
-  {
-    key:"bewustzijn",
-    label:"Bewustzijn",
-    kleur:"var(--bew)",
-    omschrijving:"Filosofie, patronen, transformatie, schaduwwerk, The Pattern",
-    categorieen:["Patroon","Transformatie","Schaduwwerk","The Pattern","Filosofie","Ceremonie","Algemeen"]
-  },
-  {
-    key:"overkoepelend",
-    label:"Overkoepelend",
-    kleur:"var(--over)",
-    omschrijving:"Verbanden tussen vakgebieden, jouw stem en stijl",
-    categorieen:["Stem & stijl","Verbanden","Voorbeeldrapport","Kernfilosofie","Algemeen"]
-  },
+  { key:"astrologie",    label:"Astrologie",    kleur:"var(--astro)" },
+  { key:"human_design",  label:"Human Design",  kleur:"var(--hd)" },
+  { key:"numerologie",   label:"Numerologie",   kleur:"var(--num)" },
+  { key:"bewustzijn",    label:"Bewustzijn",    kleur:"var(--bew)" },
+  { key:"overkoepelend", label:"Overkoepelend", kleur:"var(--over)" },
 ];
 
+const S = {
+  card: { background:"var(--card)", borderRadius:16, padding:"20px", border:"1px solid var(--border)", marginBottom:12 },
+  label: { fontSize:11, color:"var(--text3)", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8, fontWeight:600, display:"block" },
+  input: { width:"100%", background:"var(--bg)", border:"1px solid var(--border2)", borderRadius:10, color:"var(--text)", padding:"11px 14px", fontSize:14, fontWeight:400 },
+  btn: (kleur, disabled) => ({
+    width:"100%", padding:"13px", borderRadius:12, border:"none",
+    background: disabled ? "var(--bg2)" : kleur,
+    color: disabled ? "var(--text3)" : "#fff",
+    fontSize:14, fontWeight:600, cursor: disabled ? "default" : "pointer",
+    transition:"all 0.2s"
+  }),
+};
+
 function App() {
-  const [scherm, setScherm] = useState("overzicht");
-  const [actieveAgent, setActieveAgent] = useState(null);
+  const [agent, setAgent] = useState("astrologie");
+  const [tab, setTab] = useState("url");
+  const [url, setUrl] = useState("");
+  const [tekst, setTekst] = useState("");
+  const [categorie, setCategorie] = useState("");
+  const [status, setStatus] = useState(null); // null | loading | success | error
+  const [bericht, setBericht] = useState("");
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const [scherm, setScherm] = useState("toevoegen"); // toevoegen | kennisbank
 
-  useEffect(() => setTimeout(() => setMounted(true), 50), []);
+  const actAgent = AGENTEN.find(a => a.key === agent);
 
-  const openAgent = async (agent) => {
-    setActieveAgent(agent);
-    setScherm("agent");
-    laadItems(agent.key);
-  };
+  useEffect(() => { laadItems(); }, [agent]);
 
-  const laadItems = async (agentKey) => {
-    setLoading(true);
+  const laadItems = async () => {
     try {
-      const { data } = await sb.from("kennis")
-        .select("*")
-        .eq("agent", agentKey)
-        .order("aangemaakt_op", { ascending: false });
-      setItems(data || []);
-    } catch {}
-    setLoading(false);
+      const res = await fetch(`https://glvpyebivwsjqsrbfank.supabase.co/rest/v1/kennis?agent=eq.${agent}&order=aangemaakt_op.desc&select=*`, {
+        headers: {
+          "apikey": "sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
+          "Authorization": "Bearer sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
+        }
+      });
+      const data = await res.json();
+      setItems(Array.isArray(data) ? data : []);
+    } catch { setItems([]); }
   };
 
-  const verwijderItem = async (id) => {
-    await sb.from("kennis").delete().eq("id", id);
+  const verwijder = async (id) => {
+    await fetch(`https://glvpyebivwsjqsrbfank.supabase.co/rest/v1/kennis?id=eq.${id}`, {
+      method: "DELETE",
+      headers: {
+        "apikey": "sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
+        "Authorization": "Bearer sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
+      }
+    });
     setItems(prev => prev.filter(i => i.id !== id));
   };
 
+  const voegToe = async () => {
+    setStatus("loading");
+    try {
+      const body = {
+        agent,
+        categorie: categorie || "Algemeen",
+        ...(tab === "url" ? { bronUrl: url } : { tekst }),
+      };
+
+      const res = await fetch(`${WORKER}/leer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setStatus("success");
+        setBericht(`Opgeslagen — ${data.tekens} tekens toegevoegd aan ${actAgent.label}.`);
+        setUrl(""); setTekst(""); setCategorie("");
+        laadItems();
+        setTimeout(() => setStatus(null), 4000);
+      } else {
+        setStatus("error");
+        setBericht(data.error || "Onbekende fout.");
+      }
+    } catch (err) {
+      setStatus("error");
+      setBericht("Verbinding mislukt: " + err.message);
+    }
+  };
+
+  const kanOpslaan = status !== "loading" && (tab === "url" ? url.trim().length > 5 : tekst.trim().length > 50);
+
   return (
-    <div style={{
-      minHeight:"100vh", background:"var(--bg)",
-      maxWidth:600, margin:"0 auto",
-      opacity:mounted?1:0, transition:"opacity 0.4s ease"
-    }}>
-      {scherm === "overzicht" && (
-        <Overzicht agenten={AGENTEN} onOpen={openAgent} />
-      )}
-      {scherm === "agent" && actieveAgent && (
-        <AgentScherm
-          agent={actieveAgent}
-          items={items}
-          loading={loading}
-          onTerug={() => setScherm("overzicht")}
-          onToegevoegd={() => laadItems(actieveAgent.key)}
-          onVerwijder={verwijderItem}
-        />
-      )}
-    </div>
-  );
-}
+    <div style={{ maxWidth:560, margin:"0 auto", padding:"32px 16px 60px" }}>
 
-// ── OVERZICHT ─────────────────────────────────────────────────────────────
-function Overzicht({ agenten, onOpen }) {
-  const [tellingen, setTellingen] = useState({});
-
-  useEffect(() => {
-    agenten.forEach(async a => {
-      const { count } = await sb.from("kennis")
-        .select("*", { count:"exact", head:true })
-        .eq("agent", a.key);
-      setTellingen(prev => ({ ...prev, [a.key]: count || 0 }));
-    });
-  }, []);
-
-  return (
-    <div>
-      <div style={{
-        padding:"44px 28px 24px",
-        background:"var(--card)",
-        borderBottom:"1px solid var(--border)"
-      }}>
-        <div style={{fontSize:11,letterSpacing:"0.18em",color:"var(--text3)",textTransform:"uppercase",marginBottom:10,fontWeight:600}}>
-          Cosmic Spirit
-        </div>
-        <h1 style={{fontSize:26,fontWeight:600,color:"var(--text)",letterSpacing:"-0.01em"}}>Kennisbeheer</h1>
-        <p style={{fontSize:13,color:"var(--text3)",marginTop:6,fontStyle:"italic"}}>
-          Voed de agenten met jouw kennis en inzichten.
-        </p>
+      {/* Header */}
+      <div style={{ marginBottom:28 }}>
+        <div style={{ fontSize:11, letterSpacing:"0.18em", color:"var(--text3)", textTransform:"uppercase", marginBottom:8, fontWeight:600 }}>Cosmic Spirit</div>
+        <h1 style={{ fontSize:24, fontWeight:600, color:"var(--text)" }}>Kennisbeheer</h1>
+        <p style={{ fontSize:13, color:"var(--text3)", marginTop:6, fontStyle:"italic" }}>Voed de agenten met websites, tekst of documenten.</p>
       </div>
 
-      <div style={{padding:"24px 20px", display:"flex", flexDirection:"column", gap:12}}>
-        {agenten.map(agent => (
-          <button key={agent.key} onClick={() => onOpen(agent)} style={{
-            background:"var(--card)", border:"1px solid var(--border)",
-            borderLeft:`4px solid ${agent.kleur}`,
-            borderRadius:14, padding:"18px 20px",
-            textAlign:"left", transition:"all 0.15s",
-            display:"flex", alignItems:"center", gap:16
-          }}
-          onMouseEnter={e => e.currentTarget.style.borderColor = agent.kleur}
-          onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
-          >
-            <div style={{flex:1}}>
-              <div style={{fontSize:16,fontWeight:600,color:"var(--text)",marginBottom:4}}>{agent.label}</div>
-              <div style={{fontSize:12,color:"var(--text3)",lineHeight:1.5}}>{agent.omschrijving}</div>
-            </div>
-            <div style={{textAlign:"center",flexShrink:0}}>
-              <div style={{fontSize:24,fontWeight:300,color:agent.kleur,lineHeight:1}}>{tellingen[agent.key] ?? "—"}</div>
-              <div style={{fontSize:10,color:"var(--text3)",marginTop:2,letterSpacing:"0.06em",textTransform:"uppercase"}}>items</div>
-            </div>
+      {/* Agent kiezen */}
+      <div style={{ marginBottom:20 }}>
+        <span style={S.label}>Agent</span>
+        <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+          {AGENTEN.map(a => (
+            <button key={a.key} onClick={() => setAgent(a.key)} style={{
+              padding:"8px 16px", borderRadius:20,
+              border:`1.5px solid ${agent===a.key ? a.kleur : "var(--border2)"}`,
+              background: agent===a.key ? `${a.kleur}20` : "transparent",
+              color: agent===a.key ? a.kleur : "var(--text2)",
+              fontSize:13, fontWeight:600, transition:"all 0.15s"
+            }}>{a.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Scherm tabs */}
+      <div style={{ display:"flex", borderBottom:"1px solid var(--border)", marginBottom:20 }}>
+        {["toevoegen","kennisbank"].map(s => (
+          <button key={s} onClick={() => setScherm(s)} style={{
+            flex:1, padding:"10px", background:"transparent", border:"none",
+            borderBottom: scherm===s ? `2px solid ${actAgent.kleur}` : "2px solid transparent",
+            color: scherm===s ? actAgent.kleur : "var(--text3)",
+            fontSize:12, fontWeight:600, letterSpacing:"0.06em", textTransform:"uppercase"
+          }}>
+            {s === "toevoegen" ? "Bron toevoegen" : `Kennisbank (${items.length})`}
           </button>
         ))}
       </div>
-    </div>
-  );
-}
 
-// ── AGENT SCHERM ──────────────────────────────────────────────────────────
-function AgentScherm({ agent, items, loading, onTerug, onToegevoegd, onVerwijder }) {
-  const [tab, setTab] = useState("toevoegen");
+      {scherm === "toevoegen" && (
+        <div>
+          {/* Invoertype */}
+          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+            {["url","tekst"].map(t => (
+              <button key={t} onClick={() => setTab(t)} style={{
+                flex:1, padding:"10px", borderRadius:10,
+                border:`1.5px solid ${tab===t ? actAgent.kleur : "var(--border2)"}`,
+                background: tab===t ? `${actAgent.kleur}15` : "transparent",
+                color: tab===t ? actAgent.kleur : "var(--text2)",
+                fontSize:13, fontWeight:600
+              }}>
+                {t === "url" ? "🌐 Website / URL" : "✏️ Tekst / PDF inhoud"}
+              </button>
+            ))}
+          </div>
 
-  return (
-    <div>
-      <div style={{
-        padding:"44px 28px 0",
-        background:"var(--card)",
-        borderBottom:"1px solid var(--border)"
-      }}>
-        <button onClick={onTerug} style={{
-          background:"none", border:"none", color:"var(--text3)",
-          fontSize:13, fontWeight:500, padding:"0 0 16px", display:"flex",
-          alignItems:"center", gap:6
-        }}>← Terug</button>
+          {/* URL invoer */}
+          {tab === "url" && (
+            <div style={{ marginBottom:16 }}>
+              <span style={S.label}>Website URL</span>
+              <input
+                value={url}
+                onChange={e => setUrl(e.target.value)}
+                placeholder="https://astrocepheus.com/knowledgebase"
+                style={S.input}
+              />
+              <p style={{ fontSize:12, color:"var(--text3)", marginTop:6, lineHeight:1.6 }}>
+                De agent leest de pagina automatisch uit en slaat de inhoud op in de kennisbank.
+              </p>
+            </div>
+          )}
 
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
-          <div style={{width:10,height:10,borderRadius:"50%",background:agent.kleur,flexShrink:0}}/>
-          <h1 style={{fontSize:22,fontWeight:600,color:"var(--text)"}}>{agent.label}</h1>
-        </div>
-        <p style={{fontSize:13,color:"var(--text3)",marginBottom:20,lineHeight:1.6}}>{agent.omschrijving}</p>
+          {/* Tekst invoer */}
+          {tab === "tekst" && (
+            <div style={{ marginBottom:16 }}>
+              <span style={S.label}>Tekst of PDF inhoud</span>
+              <textarea
+                value={tekst}
+                onChange={e => setTekst(e.target.value)}
+                placeholder="Plak hier tekst, een samenvatting van een boek, of gekopieerde inhoud uit een PDF..."
+                style={{ ...S.input, minHeight:160, resize:"vertical", lineHeight:1.7 }}
+              />
+              <p style={{ fontSize:11, color:"var(--text3)", marginTop:4, textAlign:"right" }}>{tekst.length} tekens</p>
+            </div>
+          )}
 
-        <div style={{display:"flex",gap:0}}>
-          {["toevoegen","kennisbank"].map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{
-              flex:1, padding:"11px 8px", background:"transparent", border:"none",
-              borderBottom: tab===t ? `2px solid ${agent.kleur}` : "2px solid transparent",
-              color: tab===t ? agent.kleur : "var(--text3)",
-              fontSize:12, fontWeight:600, letterSpacing:"0.06em",
-              textTransform:"uppercase", transition:"all 0.2s"
-            }}>
-              {t === "toevoegen" ? "Toevoegen" : `Kennisbank (${items.length})`}
-            </button>
-          ))}
-        </div>
-      </div>
+          {/* Categorie */}
+          <div style={{ marginBottom:20 }}>
+            <span style={S.label}>Categorie (optioneel)</span>
+            <input
+              value={categorie}
+              onChange={e => setCategorie(e.target.value)}
+              placeholder="bijv. Maanfase, Kreeft, Manifesting Generator..."
+              style={S.input}
+            />
+          </div>
 
-      <div style={{padding:"24px 20px"}}>
-        {tab === "toevoegen" && (
-          <ToevoegenForm agent={agent} onToegevoegd={() => { onToegevoegd(); setTab("kennisbank"); }} />
-        )}
-        {tab === "kennisbank" && (
-          <KennisbankLijst items={items} loading={loading} agent={agent} onVerwijder={onVerwijder} />
-        )}
-      </div>
-    </div>
-  );
-}
+          {/* Status */}
+          {status === "success" && (
+            <div style={{ background:"rgba(122,168,139,0.15)", border:"1px solid rgba(122,168,139,0.4)", borderRadius:10, padding:"12px 16px", fontSize:13, color:"var(--green)", fontWeight:500, marginBottom:16 }}>
+              ✓ {bericht}
+            </div>
+          )}
+          {status === "error" && (
+            <div style={{ background:"rgba(192,57,43,0.1)", border:"1px solid rgba(192,57,43,0.3)", borderRadius:10, padding:"12px 16px", fontSize:13, color:"var(--red)", fontWeight:500, marginBottom:16 }}>
+              ✕ {bericht}
+            </div>
+          )}
 
-// ── TOEVOEGEN FORM ────────────────────────────────────────────────────────
-function ToevoegenForm({ agent, onToegevoegd }) {
-  const [categorie, setCategorie] = useState(agent.categorieen[0]);
-  const [inhoud, setInhoud] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [success, setSuccess] = useState(false);
-
-  const opslaan = async () => {
-    if (!inhoud.trim()) return;
-    setSaving(true);
-    try {
-      await sb.from("kennis").insert({
-        agent: agent.key,
-        categorie,
-        inhoud: inhoud.trim(),
-      });
-      setInhoud("");
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 2500);
-      onToegevoegd();
-    } catch {}
-    setSaving(false);
-  };
-
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      <div>
-        <div style={{fontSize:11,color:"var(--text3)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Categorie</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-          {agent.categorieen.map(c => (
-            <button key={c} onClick={() => setCategorie(c)} style={{
-              padding:"7px 14px", borderRadius:20,
-              border:`1.5px solid ${categorie===c ? agent.kleur : "var(--border2)"}`,
-              background: categorie===c ? `${agent.kleur}20` : "transparent",
-              color: categorie===c ? agent.kleur : "var(--text2)",
-              fontSize:12, fontWeight:600, transition:"all 0.15s"
-            }}>{c}</button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div style={{fontSize:11,color:"var(--text3)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>
-          Kennis / inzicht
-        </div>
-        <textarea
-          value={inhoud}
-          onChange={e => setInhoud(e.target.value)}
-          placeholder={`Schrijf hier jouw kennis over ${agent.label.toLowerCase()}...\n\nDit kan zijn:\n— Een interpretatie\n— Een patroon dat je ziet\n— Een samenvatting van een bron\n— Een inzicht uit je praktijk`}
-          style={{
-            width:"100%", minHeight:200, background:"var(--card)",
-            border:"1px solid var(--border2)", borderRadius:14,
-            color:"var(--text)", padding:"16px", fontSize:14,
-            fontFamily:"'Quicksand',sans-serif", fontWeight:400,
-            resize:"vertical", outline:"none", lineHeight:1.75
-          }}
-        />
-        <div style={{fontSize:11,color:"var(--text3)",marginTop:6,textAlign:"right"}}>
-          {inhoud.length} tekens
-        </div>
-      </div>
-
-      {success && (
-        <div style={{
-          background:"rgba(122,168,139,0.15)", border:"1px solid rgba(122,168,139,0.4)",
-          borderRadius:10, padding:"12px 16px", fontSize:13, color:"var(--bew)",
-          fontWeight:500, animation:"fadeIn 0.2s ease"
-        }}>
-          Opgeslagen in de kennisbank.
+          <button onClick={voegToe} disabled={!kanOpslaan} style={S.btn(actAgent.kleur, !kanOpslaan)}>
+            {status === "loading" ? (
+              <span style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
+                <span style={{ width:16, height:16, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.3)", borderTop:"2px solid #fff", animation:"spin 1s linear infinite", display:"inline-block" }}/>
+                Bezig met uitlezen...
+              </span>
+            ) : "Toevoegen aan kennisbank"}
+          </button>
         </div>
       )}
 
-      <button
-        onClick={opslaan}
-        disabled={saving || !inhoud.trim()}
-        style={{
-          padding:"14px", borderRadius:12, border:"none",
-          background: saving||!inhoud.trim() ? "var(--bg2)" : agent.kleur,
-          color: saving||!inhoud.trim() ? "var(--text3)" : "#fff",
-          fontSize:14, fontWeight:600,
-          transition:"all 0.2s"
-        }}
-      >
-        {saving ? "Opslaan..." : "Toevoegen aan kennisbank"}
-      </button>
+      {scherm === "kennisbank" && (
+        <div>
+          {items.length === 0 ? (
+            <div style={{ textAlign:"center", padding:"48px 0", color:"var(--text3)", fontStyle:"italic", fontSize:14 }}>
+              Nog geen kennis toegevoegd voor {actAgent.label}.
+            </div>
+          ) : (
+            items.map(item => (
+              <KennisItem key={item.id} item={item} onVerwijder={verwijder} kleur={actAgent.kleur} />
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ── KENNISBANK LIJST ──────────────────────────────────────────────────────
-function KennisbankLijst({ items, loading, agent, onVerwijder }) {
-  const [uitgevouwen, setUitgevouwen] = useState(null);
-  const [bevestig, setBevestig] = useState(null);
-
-  if (loading) return (
-    <div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}>
-      <div style={{width:28,height:28,borderRadius:"50%",border:"2px solid var(--bg2)",borderTop:`2px solid ${agent.kleur}`,animation:"spin 1.2s linear infinite"}}/>
-    </div>
-  );
-
-  if (items.length === 0) return (
-    <div style={{textAlign:"center",padding:"48px 0"}}>
-      <div style={{fontSize:32,marginBottom:12}}>📭</div>
-      <p style={{fontSize:14,color:"var(--text3)",fontStyle:"italic"}}>Nog geen kennis toegevoegd voor deze agent.</p>
-    </div>
-  );
-
-  const groepeerdPerCategorie = items.reduce((acc, item) => {
-    const cat = item.categorie || "Overig";
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(item);
-    return acc;
-  }, {});
+function KennisItem({ item, onVerwijder, kleur }) {
+  const [open, setOpen] = useState(false);
+  const [bevestig, setBevestig] = useState(false);
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:24}}>
-      {Object.entries(groepeerdPerCategorie).map(([cat, catItems]) => (
-        <div key={cat}>
+    <div style={{ background:"var(--card)", border:"1px solid var(--border)", borderRadius:12, marginBottom:8, overflow:"hidden" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width:"100%", padding:"14px 16px", background:"transparent", border:"none",
+        textAlign:"left", display:"flex", alignItems:"flex-start", gap:12
+      }}>
+        <div style={{ flex:1 }}>
+          {item.categorie && (
+            <div style={{ fontSize:10, color:kleur, fontWeight:600, letterSpacing:"0.08em", textTransform:"uppercase", marginBottom:4 }}>{item.categorie}</div>
+          )}
           <div style={{
-            fontSize:11, color:agent.kleur, letterSpacing:"0.1em",
-            textTransform:"uppercase", marginBottom:10, fontWeight:600,
-            display:"flex", alignItems:"center", gap:8
+            fontSize:13, color:"var(--text)", lineHeight:1.5,
+            display:"-webkit-box", WebkitLineClamp: open ? "unset" : 2,
+            WebkitBoxOrient:"vertical", overflow: open ? "visible" : "hidden"
           }}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:agent.kleur}}/>
-            {cat} ({catItems.length})
+            {item.bron ? `🌐 ${item.bron}` : item.inhoud}
           </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {catItems.map(item => (
-              <div key={item.id} style={{
-                background:"var(--card)", border:"1px solid var(--border)",
-                borderRadius:12, overflow:"hidden",
-                animation:"fadeIn 0.2s ease"
-              }}>
-                <button
-                  onClick={() => setUitgevouwen(uitgevouwen === item.id ? null : item.id)}
-                  style={{
-                    width:"100%", padding:"14px 16px", background:"transparent",
-                    border:"none", textAlign:"left", display:"flex",
-                    alignItems:"flex-start", gap:12
-                  }}
-                >
-                  <div style={{flex:1}}>
-                    <div style={{
-                      fontSize:13, color:"var(--text)", lineHeight:1.5, fontWeight:400,
-                      display:"-webkit-box", WebkitLineClamp: uitgevouwen===item.id ? "unset" : 2,
-                      WebkitBoxOrient:"vertical", overflow: uitgevouwen===item.id ? "visible" : "hidden"
-                    }}>
-                      {item.inhoud}
-                    </div>
-                    <div style={{fontSize:11,color:"var(--text3)",marginTop:6}}>
-                      {new Date(item.aangemaakt_op).toLocaleDateString("nl-NL",{day:"numeric",month:"long",year:"numeric"})}
-                    </div>
-                  </div>
-                  <span style={{fontSize:11,color:"var(--text3)",flexShrink:0,marginTop:2}}>
-                    {uitgevouwen===item.id ? "▲" : "▼"}
-                  </span>
-                </button>
-
-                {uitgevouwen === item.id && (
-                  <div style={{padding:"0 16px 14px",borderTop:"1px solid var(--border)"}}>
-                    {bevestig === item.id ? (
-                      <div style={{display:"flex",gap:8,paddingTop:12}}>
-                        <button onClick={() => { onVerwijder(item.id); setBevestig(null); setUitgevouwen(null); }} style={{
-                          flex:1, padding:"9px", borderRadius:8, border:"none",
-                          background:"#c0392b", color:"#fff", fontSize:12, fontWeight:600
-                        }}>Ja, verwijder</button>
-                        <button onClick={() => setBevestig(null)} style={{
-                          flex:1, padding:"9px", borderRadius:8,
-                          border:"1px solid var(--border2)", background:"transparent",
-                          color:"var(--text2)", fontSize:12, fontWeight:500
-                        }}>Annuleren</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setBevestig(item.id)} style={{
-                        marginTop:12, background:"none", border:"none",
-                        color:"var(--text3)", fontSize:12, fontWeight:500,
-                        padding:0
-                      }}>Verwijderen</button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>
+            {new Date(item.aangemaakt_op).toLocaleDateString("nl-NL", { day:"numeric", month:"long", year:"numeric" })}
+            {item.inhoud && ` · ${item.inhoud.length} tekens`}
           </div>
         </div>
-      ))}
+        <span style={{ fontSize:11, color:"var(--text3)", flexShrink:0 }}>{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding:"0 16px 14px", borderTop:"1px solid var(--border)" }}>
+          {item.bron && (
+            <p style={{ fontSize:12, color:"var(--text2)", marginTop:10, marginBottom:8, lineHeight:1.6, fontStyle:"italic" }}>
+              {item.inhoud?.substring(0, 300)}...
+            </p>
+          )}
+          {bevestig ? (
+            <div style={{ display:"flex", gap:8, marginTop:10 }}>
+              <button onClick={() => { onVerwijder(item.id); setBevestig(false); }} style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:"var(--red)", color:"#fff", fontSize:12, fontWeight:600 }}>Ja, verwijder</button>
+              <button onClick={() => setBevestig(false)} style={{ flex:1, padding:"8px", borderRadius:8, border:"1px solid var(--border2)", background:"transparent", color:"var(--text2)", fontSize:12 }}>Annuleren</button>
+            </div>
+          ) : (
+            <button onClick={() => setBevestig(true)} style={{ marginTop:10, background:"none", border:"none", color:"var(--text3)", fontSize:12, fontWeight:500, padding:0 }}>Verwijderen</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
