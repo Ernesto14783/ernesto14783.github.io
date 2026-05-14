@@ -13,59 +13,34 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   :root {
-    --bg:     #f7f4ef;
-    --bg2:    #eeeae2;
-    --card:   #ffffff;
-    --border: rgba(0,0,0,0.07);
-    --border2:rgba(0,0,0,0.13);
-    --text:   #2c2825;
-    --text2:  #7a7068;
-    --text3:  #b0a898;
-    --accent: #c9a96e;
-    --accent2:rgba(201,169,110,0.13);
+    --bg:#f7f4ef; --bg2:#eeeae2; --card:#ffffff;
+    --border:rgba(0,0,0,0.07); --border2:rgba(0,0,0,0.13);
+    --text:#2c2825; --text2:#7a7068; --text3:#b0a898;
+    --accent:#c9a96e; --accent2:rgba(201,169,110,0.13);
   }
-  body { background: var(--bg); color: var(--text); font-family: 'Quicksand', sans-serif; font-weight: 400; min-height: 100vh; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  textarea:focus, input:focus { outline: none; }
-  button { font-family: 'Quicksand', sans-serif; }
-  ::-webkit-scrollbar { display: none; }
-  scrollbar-width: none;
+  body { background:var(--bg); color:var(--text); font-family:'Quicksand',sans-serif; font-weight:400; min-height:100vh; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+  textarea:focus, input:focus { outline:none; }
+  button { font-family:'Quicksand',sans-serif; }
+  ::-webkit-scrollbar { display:none; }
+  scrollbar-width:none;
 </style>
 </head>
 <body>
 <div id="root"></div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
 <script type="text/babel">
 const { useState, useEffect, useRef, useCallback } = React;
 
-// ─────────────────────────────────────────────────────────────────────────
-// SUPABASE CONFIG
-// 1. Ga naar supabase.com → maak gratis project aan
-// 2. Settings → API → kopieer Project URL en anon public key
-// 3. Voer dit SQL uit in de Supabase SQL Editor:
-//
-//   create table ernesto_data (
-//     id text primary key,
-//     data jsonb,
-//     updated_at timestamptz default now()
-//   );
-//   alter table ernesto_data enable row level security;
-//   create policy "open" on ernesto_data for all using (true) with check (true);
-//
-// 4. Plak URL en key hieronder
-// ─────────────────────────────────────────────────────────────────────────
 const SUPABASE_URL  = "https://glvpyebivwsjqsrbfank.supabase.co";
-const SUPABASE_ANON = "sb_publishable_EH...jouw volledige key...";
-const CONFIGURED = !SUPABASE_URL.startsWith("JOUW");
-const sb = CONFIGURED ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON) : null;
-
+const SUPABASE_ANON = "sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 const WORKER_URL = "https://cosmic-spirit-proxy.ernesto14783.workers.dev";
+
 const ERNESTO = {
   naam:"Ernesto Arrendell", geboortedatum:"14 juli 1983",
   geboorteplaats:"Delft", geboortetijd:"22:49",
@@ -77,41 +52,113 @@ const getTodayKey = () => new Date().toISOString().split("T")[0];
 const getTodayFull = () => new Date().toLocaleDateString("nl-NL",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 const formatDate = key => new Date(key+"T12:00:00").toLocaleDateString("nl-NL",{weekday:"long",day:"numeric",month:"long"});
 
-// ── DB HELPERS ────────────────────────────────────────────────────────────
-function lsGet(key,def=null){ try{const v=localStorage.getItem("cs_"+key);return v?JSON.parse(v):def;}catch{return def;} }
-function lsSet(key,val){ try{localStorage.setItem("cs_"+key,JSON.stringify(val));}catch{} }
+// ── STORAGE ───────────────────────────────────────────────────────────────
+function lsGet(key,def=null){try{const v=localStorage.getItem("cs_"+key);return v?JSON.parse(v):def;}catch{return def;}}
+function lsSet(key,val){try{localStorage.setItem("cs_"+key,JSON.stringify(val));}catch{}}
 
-async function dbGet(key){
-  if(!CONFIGURED) return null;
+async function dbGet(key,uid){
+  if(!uid)return null;
   try{
-    const {data,error}=await sb.from("ernesto_data").select("data").eq("id",key).maybeSingle();
-    if(error||!data) return null;
+    const{data,error}=await sb.from("ernesto_data").select("data").eq("id",uid+"_"+key).maybeSingle();
+    if(error||!data)return null;
     return data.data;
   }catch{return null;}
 }
-async function dbSet(key,val){
+async function dbSet(key,val,uid){
   lsSet(key,val);
-  if(!CONFIGURED) return;
-  try{ await sb.from("ernesto_data").upsert({id:key,data:val,updated_at:new Date().toISOString()},{onConflict:"id"}); }catch{}
+  if(!uid)return;
+  try{await sb.from("ernesto_data").upsert({id:uid+"_"+key,user_id:uid,data:val,updated_at:new Date().toISOString()},{onConflict:"id"});}catch{}
 }
 
-function useDB(key,initial){
-  const [val,setValRaw]=useState(()=>lsGet(key,initial));
-  const [ready,setReady]=useState(false);
+function useDB(key,initial,uid){
+  const[val,setValRaw]=useState(()=>lsGet(key,initial));
+  const[ready,setReady]=useState(false);
   useEffect(()=>{
-    dbGet(key).then(remote=>{
-      if(remote!==null){setValRaw(remote);lsSet(key,remote);}
-      setReady(true);
-    });
-  },[key]);
+    if(!uid){setReady(true);return;}
+    dbGet(key,uid).then(r=>{if(r!==null){setValRaw(r);lsSet(key,r);}setReady(true);});
+  },[key,uid]);
   const set=useCallback(v=>{
-    setValRaw(prev=>{
-      const next=typeof v==="function"?v(prev):v;
-      dbSet(key,next);
-      return next;
-    });
-  },[key]);
-  return [val,set,ready];
+    setValRaw(prev=>{const next=typeof v==="function"?v(prev):v;dbSet(key,next,uid);return next;});
+  },[key,uid]);
+  return[val,set,ready];
+}
+
+// ── STYLES ────────────────────────────────────────────────────────────────
+const S={
+  card:{background:"var(--card)",borderRadius:16,padding:"18px 20px",border:"1px solid var(--border)"},
+  label:{fontSize:11,color:"var(--text3)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8,fontWeight:600},
+  input:{width:"100%",background:"var(--bg)",border:"1px solid var(--border2)",borderRadius:10,color:"var(--text)",padding:"10px 13px",fontSize:14,fontFamily:"'Quicksand',sans-serif",fontWeight:400,outline:"none"},
+  textarea:{width:"100%",minHeight:90,background:"var(--bg)",border:"1px solid var(--border2)",borderRadius:12,color:"var(--text)",padding:"12px 14px",fontSize:14,fontFamily:"'Quicksand',sans-serif",fontWeight:400,resize:"none",outline:"none",lineHeight:1.7},
+  btnPrimary:{padding:"11px 22px",borderRadius:10,border:"none",background:"var(--accent)",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Quicksand',sans-serif"},
+  btnGhost:{padding:"9px 16px",borderRadius:10,border:"1px solid var(--border2)",background:"transparent",color:"var(--text2)",fontSize:12,cursor:"pointer",fontFamily:"'Quicksand',sans-serif",fontWeight:500},
+};
+
+// ── LOGIN ─────────────────────────────────────────────────────────────────
+function LoginScreen(){
+  const[email,setEmail]=useState("");
+  const[sent,setSent]=useState(false);
+  const[loading,setLoading]=useState(false);
+  const[error,setError]=useState(null);
+
+  const send=async()=>{
+    const e=email.trim();if(!e)return;
+    setLoading(true);setError(null);
+    try{
+      const{error}=await sb.auth.signInWithOtp({email:e,options:{emailRedirectTo:window.location.href}});
+      if(error)throw error;
+      setSent(true);
+    }catch{setError("Er ging iets mis. Controleer je e-mailadres en probeer opnieuw.");}
+    finally{setLoading(false);}
+  };
+
+  return(
+    <div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{width:"100%",maxWidth:380}}>
+        <div style={{textAlign:"center",marginBottom:48}}>
+          <div style={{fontSize:11,letterSpacing:"0.2em",color:"var(--text3)",textTransform:"uppercase",marginBottom:12,fontWeight:600}}>Cosmic Spirit</div>
+          <h1 style={{fontSize:32,fontWeight:600,color:"var(--text)",letterSpacing:"-0.02em"}}>Ernesto</h1>
+          <p style={{fontSize:13,color:"var(--text3)",marginTop:8,fontStyle:"italic"}}>Camper. Vrijheid. 3000 per maand.</p>
+        </div>
+
+        {sent?(
+          <div style={{...S.card,textAlign:"center",padding:"32px 28px"}}>
+            <div style={{fontSize:36,marginBottom:16}}>✉️</div>
+            <div style={{fontSize:16,fontWeight:600,color:"var(--text)",marginBottom:10}}>Check je mail</div>
+            <p style={{fontSize:14,color:"var(--text2)",lineHeight:1.7}}>Er is een inloglink verstuurd naar <strong>{email}</strong>. Tik op de link in de mail om in te loggen.</p>
+            <button onClick={()=>{setSent(false);setEmail("");}} style={{marginTop:20,background:"none",border:"none",color:"var(--text3)",fontSize:12,cursor:"pointer",fontFamily:"'Quicksand',sans-serif"}}>
+              Ander e-mailadres gebruiken
+            </button>
+          </div>
+        ):(
+          <div style={{...S.card,padding:"32px 28px"}}>
+            <p style={{fontSize:14,color:"var(--text2)",marginBottom:24,lineHeight:1.7}}>
+              Vul je e-mailadres in. Je ontvangt een inloglink — geen wachtwoord nodig.
+            </p>
+            <div style={{marginBottom:16}}>
+              <div style={S.label}>E-mailadres</div>
+              <input
+                type="email" value={email} onChange={e=>setEmail(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&send()}
+                placeholder="jouw@email.nl" autoFocus
+                style={{...S.input,padding:"13px 16px",fontSize:15,borderRadius:12}}
+              />
+            </div>
+            {error&&<p style={{fontSize:12,color:"#c0392b",marginBottom:12}}>{error}</p>}
+            <button
+              onClick={send} disabled={loading||!email.trim()}
+              style={{
+                width:"100%",padding:"14px",borderRadius:12,border:"none",
+                background:loading||!email.trim()?"var(--bg2)":"var(--accent)",
+                color:loading||!email.trim()?"var(--text3)":"#fff",
+                fontSize:14,fontWeight:600,cursor:loading||!email.trim()?"default":"pointer",
+                transition:"all 0.2s",fontFamily:"'Quicksand',sans-serif"
+              }}
+            >{loading?"Versturen...":"Stuur inloglink"}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── MAAN DATA ─────────────────────────────────────────────────────────────
@@ -167,65 +214,59 @@ function getCurrentMoonPhase(){
   const today=new Date();today.setHours(0,0,0,0);
   const sorted=MOON_PHASES.slice().sort((a,b)=>a.date-b.date);
   let current=sorted[0],next=sorted[1];
-  for(let i=0;i<sorted.length;i++){
-    if(sorted[i].date<=today){current=sorted[i];next=sorted[i+1]||null;}
-  }
+  for(let i=0;i<sorted.length;i++){if(sorted[i].date<=today){current=sorted[i];next=sorted[i+1]||null;}}
   return{current,next};
 }
-function daysUntil(d){const today=new Date();today.setHours(0,0,0,0);return Math.ceil((d-today)/86400000);}
+function daysUntil(d){const t=new Date();t.setHours(0,0,0,0);return Math.ceil((d-t)/86400000);}
 function fmtShort(d){return d.toLocaleDateString("nl-NL",{day:"numeric",month:"long",year:"numeric"});}
 
-// ── SHARED STYLES ─────────────────────────────────────────────────────────
-const S={
-  card:{background:"var(--card)",borderRadius:16,padding:"18px 20px",border:"1px solid var(--border)"},
-  label:{fontSize:11,color:"var(--text3)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8,fontWeight:600},
-  input:{width:"100%",background:"var(--bg)",border:"1px solid var(--border2)",borderRadius:10,color:"var(--text)",padding:"10px 13px",fontSize:14,fontFamily:"'Quicksand',sans-serif",fontWeight:400,outline:"none"},
-  textarea:{width:"100%",minHeight:90,background:"var(--bg)",border:"1px solid var(--border2)",borderRadius:12,color:"var(--text)",padding:"12px 14px",fontSize:14,fontFamily:"'Quicksand',sans-serif",fontWeight:400,resize:"none",outline:"none",lineHeight:1.7},
-  btnPrimary:{padding:"11px 22px",borderRadius:10,border:"none",background:"var(--accent)",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Quicksand',sans-serif"},
-  btnGhost:{padding:"9px 16px",borderRadius:10,border:"1px solid var(--border2)",background:"transparent",color:"var(--text2)",fontSize:12,cursor:"pointer",fontFamily:"'Quicksand',sans-serif",fontWeight:500},
-};
+// ── HELPERS ───────────────────────────────────────────────────────────────
+function getLast7(done){
+  const t=new Date();t.setHours(0,0,0,0);
+  return Array.from({length:7},(_,i)=>{const d=new Date(t);d.setDate(d.getDate()-(6-i));return!!done[d.toISOString().split("T")[0]];});
+}
+function calcStreak(done){
+  const t=new Date();t.setHours(0,0,0,0);
+  let s=0,d=new Date(t);
+  while(s<366){if(done[d.toISOString().split("T")[0]]){s++;d.setDate(d.getDate()-1);}else break;}
+  return s;
+}
 
-// ── SETUP BANNER ──────────────────────────────────────────────────────────
-function SetupBanner(){
-  if(CONFIGURED)return null;
+// ── TASK ITEM ─────────────────────────────────────────────────────────────
+function TaskItem({task,onToggle,onDelete,accent}){
   return(
-    <div style={{background:"rgba(201,169,110,0.1)",border:"1px solid rgba(201,169,110,0.3)",borderRadius:12,padding:"13px 15px",marginBottom:20,fontSize:13,color:"var(--text2)",lineHeight:1.7}}>
-      <strong style={{color:"var(--accent)"}}>Centrale opslag nog niet actief.</strong> Vul je Supabase URL en key in bovenaan de index.html om data te synchroniseren tussen apparaten. Nu wordt alles lokaal opgeslagen.
+    <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 0",borderBottom:"1px solid var(--border)",opacity:task.done?0.45:1}}>
+      <button onClick={()=>onToggle(task.id)} style={{width:18,height:18,borderRadius:"50%",border:`1.5px solid ${task.done?accent:"var(--border2)"}`,background:task.done?"var(--accent2)":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:accent,flexShrink:0,marginTop:2}}>
+        {task.done?"✓":""}
+      </button>
+      <div style={{width:5,height:5,borderRadius:"50%",background:accent,flexShrink:0,marginTop:7}}/>
+      <span style={{flex:1,fontSize:14,color:"var(--text)",lineHeight:1.5,textDecoration:task.done?"line-through":"none"}}>{task.tekst}</span>
+      <button onClick={()=>onDelete(task.id)} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:17,padding:0,lineHeight:1}}>×</button>
     </div>
   );
 }
 
 // ── HOME ──────────────────────────────────────────────────────────────────
-function HomeSection({onNavigate}){
+function HomeSection({onNavigate,uid}){
   const todayKey=getTodayKey();
-  const [weer,setWeer]=useState(null);
-  const [taken,setTaken,takenReady]=useDB("taken",[]);
-  const [routines,setRoutines]=useDB("routines",[])[0];
-  const setRoutinesDB=useDB("routines",[])[1];
-  const [nieuweTask,setNieuweTask]=useState("");
-  const [taskType,setTaskType]=useState("dag");
+  const[weer,setWeer]=useState(null);
+  const[taken,setTaken,takenReady]=useDB("taken",[],uid);
+  const[routines,setRoutines]=useDB("routines",[],uid);
+  const[nieuweTask,setNieuweTask]=useState("");
+  const[taskType,setTaskType]=useState("dag");
 
   useEffect(()=>{
-    const stored=lsGet(`energie_${todayKey}`);
-    if(stored?.["Persoonlijk Weerbericht"])setWeer(stored["Persoonlijk Weerbericht"]);
+    const s=lsGet(`energie_${todayKey}`);
+    if(s?.["Persoonlijk Weerbericht"])setWeer(s["Persoonlijk Weerbericht"]);
   },[]);
 
-  const addTask=()=>{
-    const t=nieuweTask.trim();if(!t)return;
-    setTaken(prev=>[...prev,{id:Date.now().toString(),tekst:t,type:taskType,done:false}]);
-    setNieuweTask("");
-  };
-  const toggleTask=id=>setTaken(prev=>prev.map(t=>t.id===id?{...t,done:!t.done}:t));
-  const deleteTask=id=>setTaken(prev=>prev.filter(t=>t.id!==id));
-
-  const toggleRoutine=id=>{
-    setRoutinesDB(prev=>prev.map(r=>{
-      if(r.id!==id)return r;
-      const done={...(r.done||{})};
-      done[todayKey]=!done[todayKey];
-      return{...r,done};
-    }));
-  };
+  const addTask=()=>{const t=nieuweTask.trim();if(!t)return;setTaken(p=>[...p,{id:Date.now().toString(),tekst:t,type:taskType,done:false}]);setNieuweTask("");};
+  const toggleTask=id=>setTaken(p=>p.map(t=>t.id===id?{...t,done:!t.done}:t));
+  const deleteTask=id=>setTaken(p=>p.filter(t=>t.id!==id));
+  const toggleRoutine=id=>setRoutines(p=>p.map(r=>{
+    if(r.id!==id)return r;
+    const done={...(r.done||{})};done[todayKey]=!done[todayKey];return{...r,done};
+  }));
 
   const maanTaken=taken.filter(t=>t.type==="maan");
   const dagTaken=taken.filter(t=>t.type==="dag");
@@ -233,12 +274,11 @@ function HomeSection({onNavigate}){
 
   return(
     <div>
-      {/* Weerbericht */}
       {weer?(
         <div style={{...S.card,borderLeft:"3px solid var(--accent)",marginBottom:24}}>
           <div style={S.label}>Persoonlijk Weerbericht</div>
           <p style={{fontSize:14,lineHeight:1.85,color:"var(--text2)",fontStyle:"italic"}}>{weer}</p>
-          <button onClick={()=>onNavigate("energie")} style={{background:"none",border:"none",color:"var(--accent)",fontSize:12,cursor:"pointer",marginTop:10,padding:0,fontFamily:"'Quicksand',sans-serif",fontWeight:600}}>Volledig dagrapport →</button>
+          <button onClick={()=>onNavigate("energie")} style={{background:"none",border:"none",color:"var(--accent)",fontSize:12,cursor:"pointer",marginTop:10,padding:0,fontWeight:600}}>Volledig dagrapport →</button>
         </div>
       ):(
         <div style={{marginBottom:24}}>
@@ -246,7 +286,6 @@ function HomeSection({onNavigate}){
         </div>
       )}
 
-      {/* Taken */}
       <div style={{marginBottom:26}}>
         <div style={S.label}>Taken</div>
         <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -254,7 +293,7 @@ function HomeSection({onNavigate}){
             <option value="dag">dag</option>
             <option value="maan">maan</option>
           </select>
-          <input value={nieuweTask} onChange={e=>setNieuweTask(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTask()} placeholder="Taak toevoegen..." style={{...S.input,minWidth:0}} />
+          <input value={nieuweTask} onChange={e=>setNieuweTask(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addTask()} placeholder="Taak toevoegen..." style={{...S.input,minWidth:0}}/>
           <button onClick={addTask} style={{background:"var(--accent2)",border:"1px solid rgba(201,169,110,0.3)",color:"var(--accent)",borderRadius:10,width:38,height:38,fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
         </div>
         {maanTaken.length>0&&<div style={{...S.label,marginBottom:7}}>Maanwerk</div>}
@@ -265,7 +304,6 @@ function HomeSection({onNavigate}){
         {taken.length===0&&!takenReady&&<div style={{fontSize:13,color:"var(--text3)",padding:"6px 0"}}>Laden...</div>}
       </div>
 
-      {/* Routines */}
       {activeRoutines.length>0&&(
         <div style={{marginBottom:18}}>
           <div style={S.label}>Routines</div>
@@ -290,44 +328,20 @@ function HomeSection({onNavigate}){
           })}
         </div>
       )}
-      <button onClick={()=>onNavigate("routines_beheer")} style={{background:"none",border:"none",color:"var(--text3)",fontSize:12,cursor:"pointer",padding:0,fontFamily:"'Quicksand',sans-serif",fontWeight:500}}>Routines beheren →</button>
+      <button onClick={()=>onNavigate("routines_beheer")} style={{background:"none",border:"none",color:"var(--text3)",fontSize:12,cursor:"pointer",padding:0,fontWeight:500}}>Routines beheren →</button>
     </div>
   );
-}
-
-function TaskItem({task,onToggle,onDelete,accent}){
-  return(
-    <div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 0",borderBottom:"1px solid var(--border)",opacity:task.done?0.45:1}}>
-      <button onClick={()=>onToggle(task.id)} style={{width:18,height:18,borderRadius:"50%",border:`1.5px solid ${task.done?accent:"var(--border2)"}`,background:task.done?"var(--accent2)":"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:accent,flexShrink:0,marginTop:2}}>
-        {task.done?"✓":""}
-      </button>
-      <div style={{width:5,height:5,borderRadius:"50%",background:accent,flexShrink:0,marginTop:7}}/>
-      <span style={{flex:1,fontSize:14,color:"var(--text)",lineHeight:1.5,textDecoration:task.done?"line-through":"none",fontWeight:400}}>{task.tekst}</span>
-      <button onClick={()=>onDelete(task.id)} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:17,padding:0,lineHeight:1}}>×</button>
-    </div>
-  );
-}
-
-function getLast7(done){
-  const today=new Date();today.setHours(0,0,0,0);
-  return Array.from({length:7},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-(6-i));return!!done[d.toISOString().split("T")[0]];});
-}
-function calcStreak(done){
-  const today=new Date();today.setHours(0,0,0,0);
-  let s=0,d=new Date(today);
-  while(s<366){if(done[d.toISOString().split("T")[0]]){s++;d.setDate(d.getDate()-1);}else break;}
-  return s;
 }
 
 // ── ROUTINES BEHEER ───────────────────────────────────────────────────────
-function RoutinesBeheer({onBack}){
-  const [routines,setRoutines]=useDB("routines",[]);
-  const [nieuw,setNieuw]=useState("");
-  const add=()=>{const n=nieuw.trim();if(!n)return;setRoutines(prev=>[...prev,{id:Date.now().toString(),naam:n,done:{},actief:true}]);setNieuw("");};
+function RoutinesBeheer({onBack,uid}){
+  const[routines,setRoutines]=useDB("routines",[],uid);
+  const[nieuw,setNieuw]=useState("");
+  const add=()=>{const n=nieuw.trim();if(!n)return;setRoutines(p=>[...p,{id:Date.now().toString(),naam:n,done:{},actief:true}]);setNieuw("");};
   return(
     <div>
-      <button onClick={onBack} style={{background:"none",border:"none",color:"var(--text3)",fontSize:13,cursor:"pointer",padding:"0 0 18px",fontFamily:"'Quicksand',sans-serif",fontWeight:500}}>← Terug</button>
-      <h2 style={{fontSize:17,fontWeight:600,marginBottom:20,color:"var(--text)"}}>Routines beheren</h2>
+      <button onClick={onBack} style={{background:"none",border:"none",color:"var(--text3)",fontSize:13,cursor:"pointer",padding:"0 0 18px",fontWeight:500}}>← Terug</button>
+      <h2 style={{fontSize:17,fontWeight:600,marginBottom:20}}>Routines beheren</h2>
       <div style={{display:"flex",gap:8,marginBottom:20}}>
         <input value={nieuw} onChange={e=>setNieuw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Nieuwe routine..." style={S.input}/>
         <button onClick={add} style={{background:"var(--accent2)",border:"1px solid rgba(201,169,110,0.3)",color:"var(--accent)",borderRadius:10,width:38,height:38,fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>+</button>
@@ -336,8 +350,8 @@ function RoutinesBeheer({onBack}){
       {routines.map(r=>(
         <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:"1px solid var(--border)"}}>
           <div style={{flex:1,fontSize:14,color:r.actief?"var(--text)":"var(--text3)",fontWeight:r.actief?500:400}}>{r.naam}</div>
-          <button onClick={()=>setRoutines(prev=>prev.map(x=>x.id===r.id?{...x,actief:!x.actief}:x))} style={{...S.btnGhost,fontSize:11,padding:"5px 10px"}}>{r.actief?"Pauzeer":"Activeer"}</button>
-          <button onClick={()=>setRoutines(prev=>prev.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:17,padding:0}}>×</button>
+          <button onClick={()=>setRoutines(p=>p.map(x=>x.id===r.id?{...x,actief:!x.actief}:x))} style={{...S.btnGhost,fontSize:11,padding:"5px 10px"}}>{r.actief?"Pauzeer":"Activeer"}</button>
+          <button onClick={()=>setRoutines(p=>p.filter(x=>x.id!==r.id))} style={{background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:17,padding:0}}>×</button>
         </div>
       ))}
     </div>
@@ -345,18 +359,16 @@ function RoutinesBeheer({onBack}){
 }
 
 // ── MAAN ─────────────────────────────────────────────────────────────────
-function MaanSection(){
+function MaanSection({uid}){
   const{current,next}=getCurrentMoonPhase();
   const ts=current.date.getTime();
-  const[intentie,setIntentie]=useDB(`moon_i_${ts}`,"");
-  const[reflectie,setReflectie]=useDB(`moon_r_${ts}`,"");
+  const[intentie,setIntentie]=useDB(`moon_i_${ts}`,"",uid);
+  const[reflectie,setReflectie]=useDB(`moon_r_${ts}`,"",uid);
   const[editing,setEditing]=useState(false);
   const[draftI,setDraftI]=useState("");
   const[draftR,setDraftR]=useState("");
   const isNieuw=current.type==="nieuw";
   const accentC=isNieuw?"#c9a96e":"#8b7fa8";
-
-  const startEdit=()=>{setDraftI(intentie);setDraftR(reflectie);setEditing(true);};
   const save=()=>{setIntentie(draftI);setReflectie(draftR);setEditing(false);};
 
   return(
@@ -375,13 +387,13 @@ function MaanSection(){
             {isNieuw?(
               <div>
                 <div style={S.label}>Wat wil je neerzetten of aantrekken?</div>
-                <textarea value={draftI} onChange={e=>setDraftI(e.target.value)} placeholder="Schrijf je intentie voor deze nieuwe maan..." style={S.textarea}/>
+                <textarea value={draftI} onChange={e=>setDraftI(e.target.value)} placeholder="Schrijf je intentie..." style={S.textarea}/>
               </div>
             ):(
               <>
                 <div>
                   <div style={S.label}>Wat wil je loslaten?</div>
-                  <textarea value={draftI} onChange={e=>setDraftI(e.target.value)} placeholder="Wat mag je loslaten bij dit volle maanlicht..." style={S.textarea}/>
+                  <textarea value={draftI} onChange={e=>setDraftI(e.target.value)} placeholder="Wat mag je loslaten..." style={S.textarea}/>
                 </div>
                 <div>
                   <div style={S.label}>Reflectie — hoe is je maand geweest?</div>
@@ -398,7 +410,7 @@ function MaanSection(){
               <p style={{fontSize:14,color:intentie?"var(--text2)":"var(--text3)",fontStyle:"italic",lineHeight:1.75}}>{intentie||"Nog niets ingevuld."}</p>
             </div>
             {!isNieuw&&reflectie&&<div><div style={S.label}>Reflectie</div><p style={{fontSize:14,color:"var(--text2)",fontStyle:"italic",lineHeight:1.75}}>{reflectie}</p></div>}
-            <button onClick={startEdit} style={S.btnGhost}>{intentie?"Bewerken":"Invullen"}</button>
+            <button onClick={()=>{setDraftI(intentie);setDraftR(reflectie);setEditing(true);}} style={S.btnGhost}>{intentie?"Bewerken":"Invullen"}</button>
           </div>
         )}
       </div>
@@ -420,79 +432,59 @@ function MaanSection(){
 }
 
 // ── ENERGIE ───────────────────────────────────────────────────────────────
-function EnergieSection(){
+function EnergieSection({uid}){
   const todayKey=getTodayKey();
   const cacheKey=`energie_${todayKey}`;
   const[reading,setReadingRaw]=useState(()=>lsGet(cacheKey));
   const[loading,setLoading]=useState(false);
   const[error,setError]=useState(null);
 
-  const parseReading=text=>{
+  const parse=text=>{
     const sections=["Horoscoop","Human Design","Numerologie","The Pattern","Persoonlijk Weerbericht"];
     const result={generatedOn:todayKey};
     sections.forEach((s,i)=>{
       const next=sections[i+1];
-      const regex=next?new RegExp(`\\*\\*${s}\\*\\*([\\s\\S]*?)\\*\\*${next}\\*\\*`):new RegExp(`\\*\\*${s}\\*\\*([\\s\\S]*?)$`);
-      const match=text.match(regex);
-      result[s]=match?match[1].trim():"";
+      const rx=next?new RegExp(`\\*\\*${s}\\*\\*([\\s\\S]*?)\\*\\*${next}\\*\\*`):new RegExp(`\\*\\*${s}\\*\\*([\\s\\S]*?)$`);
+      const m=text.match(rx);result[s]=m?m[1].trim():"";
     });
     return result;
   };
 
-  const saveReading=async parsed=>{
-    lsSet(cacheKey,parsed);
-    await dbSet(cacheKey,parsed);
-    setReadingRaw(parsed);
-  };
+  const saveReading=async p=>{lsSet(cacheKey,p);await dbSet(cacheKey,p,uid);setReadingRaw(p);};
 
-  const generateReading=async()=>{
+  const generate=async()=>{
     setLoading(true);setError(null);
     const moon=getMoonData();
     const prompt=`Je bent een persoonlijke energiegids voor ${ERNESTO.naam}, geboren op ${ERNESTO.geboortedatum} om ${ERNESTO.geboortetijd} in ${ERNESTO.geboorteplaats}.
-
-Zijn profiel:
-- Sterrenbeeld: ${ERNESTO.sterrenbeeld} (Zon), met Steenbok Ascendant
-- Human Design: ${ERNESTO.humanDesignType}, Profiel ${ERNESTO.humanDesignProfile}
-- Levensgetal: ${ERNESTO.lifePath}
-- Doel: succesvol ondernemen, zelfstandig leven in een camper, 3000 netto per maand
-- Beroep: bewustzijnscoach en ceremonieleider
-
-Vandaag is het ${getTodayFull()}. Maanfase: ${moon.phaseNL} in ${moon.moonSign}. Dagenergie: ${moon.dagGetal}.
-
+Sterrenbeeld: ${ERNESTO.sterrenbeeld}, Steenbok Ascendant. Human Design: ${ERNESTO.humanDesignType} ${ERNESTO.humanDesignProfile}. Levensgetal: ${ERNESTO.lifePath}.
+Doel: zelfstandig leven in een camper, 3000 netto per maand. Beroep: bewustzijnscoach en ceremonieleider.
+Vandaag: ${getTodayFull()}. Maanfase: ${moon.phaseNL} in ${moon.moonSign}. Dagenergie: ${moon.dagGetal}.
 Genereer een persoonlijk dagelijks energierapport in het Nederlands. Warm, direct, concreet. Geen bullets. Geen uitroeptekens. Geen AI-taal. Spreek Ernesto aan als "je".
-
 **Horoscoop**
 Twee tot drie zinnen over de maanenergie voor een Kreeft met Steenbok Ascendant.
-
 **Human Design**
 Twee zinnen over hoe zijn Manifesting Generator 1/3 vandaag het beste kan opereren.
-
 **Numerologie**
 Dagenergie ${moon.dagGetal} gekoppeld aan levensgetal 7. Twee zinnen.
-
 **The Pattern**
 Een intuïtief psychologisch patroon dat vandaag actief is, als zachte spiegel.
-
 **Persoonlijk Weerbericht**
 Drie tot vier zinnen. Grootste kans en uitdaging vandaag. Sluit af met één ankerzin.
-
 Maximaal 350 woorden.`;
-
     try{
       const res=await fetch(`${WORKER_URL}/dagrapport`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({gebruiker_id:"ernesto",geboortedatum:ERNESTO.geboortedatum,jaardoelstelling:"zelfstandig wonen in een camper, 3000 euro netto per maand",prompt})});
       const data=await res.json();
-      const text=data.rapport||"";
-      if(!text)throw new Error();
-      await saveReading(parseReading(text));
+      if(!data.rapport)throw new Error();
+      await saveReading(parse(data.rapport));
     }catch{setError("Er ging iets mis. Probeer het opnieuw.");}
     finally{setLoading(false);}
   };
 
   useEffect(()=>{
     if(reading?.generatedOn===todayKey)return;
-    dbGet(cacheKey).then(remote=>{
-      if(remote?.generatedOn===todayKey){setReadingRaw(remote);lsSet(cacheKey,remote);}
-      else generateReading();
+    dbGet(cacheKey,uid).then(r=>{
+      if(r?.generatedOn===todayKey){setReadingRaw(r);lsSet(cacheKey,r);}
+      else generate();
     });
   },[]);
 
@@ -502,12 +494,7 @@ Maximaal 350 woorden.`;
       <p style={{color:"var(--text3)",fontSize:13,fontStyle:"italic"}}>Dagenergie wordt berekend...</p>
     </div>
   );
-  if(error)return(
-    <div style={{textAlign:"center",padding:"40px 0"}}>
-      <p style={{color:"var(--text3)",fontSize:14,marginBottom:20}}>{error}</p>
-      <button onClick={generateReading} style={S.btnGhost}>Opnieuw proberen</button>
-    </div>
-  );
+  if(error)return(<div style={{textAlign:"center",padding:"40px 0"}}><p style={{color:"var(--text3)",fontSize:14,marginBottom:20}}>{error}</p><button onClick={generate} style={S.btnGhost}>Opnieuw proberen</button></div>);
   if(!reading)return null;
 
   return(
@@ -524,17 +511,17 @@ Maximaal 350 woorden.`;
           <p style={{fontSize:14,lineHeight:1.85,color:"var(--text2)"}}>{reading[s]}</p>
         </div>
       ):null)}
-      <button onClick={generateReading} style={{...S.btnGhost,marginTop:24,width:"100%"}}>Herlaad dagenergie</button>
+      <button onClick={generate} style={{...S.btnGhost,marginTop:24,width:"100%"}}>Herlaad dagenergie</button>
     </div>
   );
 }
 
 // ── LIGHTBOX ──────────────────────────────────────────────────────────────
-function Lightbox({photo,onClose}){
+function Lightbox({photo,onClose,uid}){
   const[caption,setCaption]=useState(()=>lsGet(`caption_${photo.id}`,""));
   const[editing,setEditing]=useState(false);
   const[draft,setDraft]=useState(caption);
-  const save=()=>{dbSet(`caption_${photo.id}`,draft);setCaption(draft);setEditing(false);};
+  const save=()=>{dbSet(`caption_${photo.id}`,draft,uid);setCaption(draft);setEditing(false);};
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:24,animation:"fadeIn 0.2s ease"}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:440}}>
@@ -561,19 +548,19 @@ function Lightbox({photo,onClose}){
 }
 
 // ── PHOTO GRID ────────────────────────────────────────────────────────────
-function PhotoGrid({photos,onAdd,onRemove,storagePrefix}){
+function PhotoGrid({photos,onAdd,onRemove,storagePrefix,uid}){
   const inputRef=useRef();
   const[lightbox,setLightbox]=useState(null);
   const handleFile=e=>{
     Array.from(e.target.files).forEach(file=>{
-      const reader=new FileReader();
-      reader.onload=ev=>onAdd({src:ev.target.result,id:`${storagePrefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`});
-      reader.readAsDataURL(file);
+      const r=new FileReader();
+      r.onload=ev=>onAdd({src:ev.target.result,id:`${storagePrefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`});
+      r.readAsDataURL(file);
     });e.target.value="";
   };
   return(
     <div>
-      {lightbox&&<Lightbox photo={lightbox} onClose={()=>setLightbox(null)}/>}
+      {lightbox&&<Lightbox photo={lightbox} uid={uid} onClose={()=>setLightbox(null)}/>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(3, 1fr)",gap:8}}>
         {photos.map((photo,i)=>{
           const src=typeof photo==="string"?photo:photo.src;
@@ -596,7 +583,7 @@ function PhotoGrid({photos,onAdd,onRemove,storagePrefix}){
 function DagSection({todayData,onUpdate}){
   const[actie,setActie]=useState(todayData.actie||"");
   const[gedaan,setGedaan]=useState(todayData.gedaan??null);
-  const save=(field,value)=>onUpdate({...todayData,[field]:value});
+  const save=(f,v)=>onUpdate({...todayData,[f]:v});
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <div>
@@ -609,7 +596,7 @@ function DagSection({todayData,onUpdate}){
           <div style={{display:"flex",gap:12}}>
             {[{label:"Ja",value:true},{label:"Nee",value:false}].map(opt=>(
               <button key={opt.label} onClick={()=>{setGedaan(opt.value);save("gedaan",opt.value);}}
-                style={{flex:1,padding:"12px 0",borderRadius:12,border:`1.5px solid ${gedaan===opt.value?"var(--accent)":"var(--border2)"}`,background:gedaan===opt.value?"var(--accent2)":"transparent",color:gedaan===opt.value?"var(--accent)":"var(--text2)",fontSize:15,cursor:"pointer",transition:"all 0.2s",fontFamily:"'Quicksand',sans-serif",fontWeight:500}}>{opt.label}</button>
+                style={{flex:1,padding:"12px 0",borderRadius:12,border:`1.5px solid ${gedaan===opt.value?"var(--accent)":"var(--border2)"}`,background:gedaan===opt.value?"var(--accent2)":"transparent",color:gedaan===opt.value?"var(--accent)":"var(--text2)",fontSize:15,cursor:"pointer",transition:"all 0.2s",fontWeight:500}}>{opt.label}</button>
             ))}
           </div>
         </div>
@@ -622,7 +609,7 @@ function DagSection({todayData,onUpdate}){
 function DankbaarSection({todayData,onUpdate}){
   const[dankbaar,setDankbaar]=useState(todayData.dankbaar||"");
   const[lachen,setLachen]=useState(todayData.lachen||"");
-  const save=(field,value)=>onUpdate({...todayData,[field]:value});
+  const save=(f,v)=>onUpdate({...todayData,[f]:v});
   return(
     <div style={{display:"flex",flexDirection:"column",gap:20}}>
       <div>
@@ -661,8 +648,7 @@ function ProgressieSection(){
     setStreak(count);
   },[]);
 
-  const isDayComplete=data=>data.gedaan===true&&data.dankbaar&&data.lachen;
-
+  const isDayComplete=d=>d.gedaan===true&&d.dankbaar&&d.lachen;
   return(
     <div>
       <div style={{display:"flex",gap:12,marginBottom:28}}>
@@ -673,9 +659,7 @@ function ProgressieSection(){
           </div>
         ))}
       </div>
-      {history.length===0?(
-        <p style={{color:"var(--text3)",fontSize:14,fontStyle:"italic",textAlign:"center",marginTop:40}}>Je eerste dag begint vandaag.</p>
-      ):(
+      {history.length===0?<p style={{color:"var(--text3)",fontSize:14,fontStyle:"italic",textAlign:"center",marginTop:40}}>Je eerste dag begint vandaag.</p>:(
         <div style={{display:"flex",flexDirection:"column",gap:2}}>
           {history.map(({dateKey,data})=>{
             if(!data.actie&&!data.dankbaar&&!data.lachen)return null;
@@ -705,20 +689,41 @@ function ProgressieSection(){
   );
 }
 
-// ── APP ───────────────────────────────────────────────────────────────────
+// ── MAIN APP ──────────────────────────────────────────────────────────────
 function App(){
+  const[session,setSession]=useState(null);
+  const[authLoading,setAuthLoading]=useState(true);
   const[active,setActive]=useState("home");
   const[routinesBeheer,setRoutinesBeheer]=useState(false);
-  const[ankerPhotos,setAnkerPhotos]=useDB("anker_photos",[]);
-  const[bewijsPhotos,setBewijsPhotos]=useDB("bewijs_photos",[]);
-  const[dagData,setDagData]=useDB(`dag_${getTodayKey()}`,{});
   const[mounted,setMounted]=useState(false);
+
+  useEffect(()=>{
+    sb.auth.getSession().then(({data:{session}})=>{setSession(session);setAuthLoading(false);});
+    const{data:{subscription}}=sb.auth.onAuthStateChange((_,session)=>{setSession(session);setAuthLoading(false);});
+    return()=>subscription.unsubscribe();
+  },[]);
+
   useEffect(()=>setTimeout(()=>setMounted(true),50),[]);
+
+  const uid = session?.user?.id;
+  const[ankerPhotos,setAnkerPhotos]=useDB("anker_photos",[],uid);
+  const[bewijsPhotos,setBewijsPhotos]=useDB("bewijs_photos",[],uid);
+  const[dagData,setDagData]=useDB(`dag_${getTodayKey()}`,{},uid);
 
   const navigate=target=>{
     if(target==="routines_beheer"){setRoutinesBeheer(true);return;}
     setActive(target);setRoutinesBeheer(false);
   };
+
+  const uitloggen=async()=>{await sb.auth.signOut();setSession(null);};
+
+  if(authLoading)return(
+    <div style={{minHeight:"100vh",background:"var(--bg)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{width:32,height:32,borderRadius:"50%",border:"2px solid var(--bg2)",borderTop:"2px solid var(--accent)",animation:"spin 1.2s linear infinite"}}/>
+    </div>
+  );
+
+  if(!session)return <LoginScreen/>;
 
   const navItems=[
     {key:"home",label:"Thuis"},{key:"maan",label:"Maan"},{key:"energie",label:"Energie"},
@@ -739,11 +744,16 @@ function App(){
     <div style={{minHeight:"100vh",background:"var(--bg)",fontFamily:"'Quicksand',sans-serif",color:"var(--text)",display:"flex",flexDirection:"column",maxWidth:480,margin:"0 auto",opacity:mounted?1:0,transition:"opacity 0.5s ease"}}>
 
       <div style={{padding:"44px 28px 22px",borderBottom:"1px solid var(--border)",background:"var(--card)"}}>
-        <div style={{fontSize:11,letterSpacing:"0.18em",color:"var(--text3)",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>
-          {new Date().toLocaleDateString("nl-NL",{weekday:"long",day:"numeric",month:"long"})}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div>
+            <div style={{fontSize:11,letterSpacing:"0.18em",color:"var(--text3)",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>
+              {new Date().toLocaleDateString("nl-NL",{weekday:"long",day:"numeric",month:"long"})}
+            </div>
+            <h1 style={{fontSize:26,fontWeight:600,letterSpacing:"-0.01em",color:"var(--text)"}}>Ernesto</h1>
+            <p style={{fontSize:13,color:"var(--text3)",margin:"6px 0 0",fontStyle:"italic"}}>Camper. Vrijheid. 3000 per maand.</p>
+          </div>
+          <button onClick={uitloggen} style={{background:"none",border:"none",color:"var(--text3)",fontSize:11,cursor:"pointer",fontFamily:"'Quicksand',sans-serif",fontWeight:500,paddingTop:4}}>Uitloggen</button>
         </div>
-        <h1 style={{fontSize:26,fontWeight:600,letterSpacing:"-0.01em",color:"var(--text)"}}>Ernesto</h1>
-        <p style={{fontSize:13,color:"var(--text3)",margin:"6px 0 0",fontStyle:"italic"}}>Camper. Vrijheid. 3000 per maand.</p>
         <div style={{display:"flex",gap:14,marginTop:18}}>
           {dots.map((d,i)=>(
             <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
@@ -757,24 +767,23 @@ function App(){
       <div style={{display:"flex",borderBottom:"1px solid var(--border)",overflowX:"auto",background:"var(--card)"}}>
         {navItems.map(item=>(
           <button key={item.key} onClick={()=>{setRoutinesBeheer(false);setActive(item.key);}}
-            style={{flex:1,padding:"13px 4px",background:"transparent",border:"none",borderBottom:active===item.key&&!routinesBeheer?"2px solid var(--accent)":"2px solid transparent",color:active===item.key&&!routinesBeheer?"var(--accent)":"var(--text3)",fontSize:10,letterSpacing:"0.07em",textTransform:"uppercase",cursor:"pointer",transition:"all 0.2s",whiteSpace:"nowrap",fontFamily:"'Quicksand',sans-serif",fontWeight:600}}>
+            style={{flex:1,padding:"13px 4px",background:"transparent",border:"none",borderBottom:active===item.key&&!routinesBeheer?"2px solid var(--accent)":"2px solid transparent",color:active===item.key&&!routinesBeheer?"var(--accent)":"var(--text3)",fontSize:10,letterSpacing:"0.07em",textTransform:"uppercase",cursor:"pointer",transition:"all 0.2s",whiteSpace:"nowrap",fontWeight:600}}>
             {item.label}
           </button>
         ))}
       </div>
 
       <div style={{padding:"26px 24px",flex:1}}>
-        <SetupBanner/>
         {routinesBeheer?(
-          <RoutinesBeheer onBack={()=>setRoutinesBeheer(false)}/>
+          <RoutinesBeheer onBack={()=>setRoutinesBeheer(false)} uid={uid}/>
         ):(
           <>
             {titles[active]&&<h2 style={{fontSize:17,fontWeight:600,marginBottom:20,color:"var(--text)"}}>{titles[active]}</h2>}
-            {active==="home"       &&<HomeSection onNavigate={navigate}/>}
-            {active==="maan"       &&<MaanSection/>}
-            {active==="energie"    &&<EnergieSection/>}
-            {active==="anker"      &&<div><p style={{color:"var(--text2)",fontSize:14,marginBottom:20,lineHeight:1.7,fontStyle:"italic"}}>Foto's van wie je al bent. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={ankerPhotos} storagePrefix="anker" onAdd={p=>setAnkerPhotos(prev=>[...prev,p])} onRemove={i=>setAnkerPhotos(prev=>prev.filter((_,idx)=>idx!==i))}/></div>}
-            {active==="bewijs"     &&<div><p style={{color:"var(--text2)",fontSize:14,marginBottom:20,lineHeight:1.7,fontStyle:"italic"}}>Foto's van wat je al hebt bewogen. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={bewijsPhotos} storagePrefix="bewijs" onAdd={p=>setBewijsPhotos(prev=>[...prev,p])} onRemove={i=>setBewijsPhotos(prev=>prev.filter((_,idx)=>idx!==i))}/></div>}
+            {active==="home"       &&<HomeSection onNavigate={navigate} uid={uid}/>}
+            {active==="maan"       &&<MaanSection uid={uid}/>}
+            {active==="energie"    &&<EnergieSection uid={uid}/>}
+            {active==="anker"      &&<div><p style={{color:"var(--text2)",fontSize:14,marginBottom:20,lineHeight:1.7,fontStyle:"italic"}}>Foto's van wie je al bent. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={ankerPhotos} storagePrefix="anker" uid={uid} onAdd={p=>setAnkerPhotos(prev=>[...prev,p])} onRemove={i=>setAnkerPhotos(prev=>prev.filter((_,idx)=>idx!==i))}/></div>}
+            {active==="bewijs"     &&<div><p style={{color:"var(--text2)",fontSize:14,marginBottom:20,lineHeight:1.7,fontStyle:"italic"}}>Foto's van wat je al hebt bewogen. Tik op een foto om een tekst toe te voegen.</p><PhotoGrid photos={bewijsPhotos} storagePrefix="bewijs" uid={uid} onAdd={p=>setBewijsPhotos(prev=>[...prev,p])} onRemove={i=>setBewijsPhotos(prev=>prev.filter((_,idx)=>idx!==i))}/></div>}
             {active==="dag"        &&<DagSection todayData={dagData} onUpdate={setDagData}/>}
             {active==="dankbaar"   &&<DankbaarSection todayData={dagData} onUpdate={setDagData}/>}
             {active==="progressie" &&<ProgressieSection/>}
