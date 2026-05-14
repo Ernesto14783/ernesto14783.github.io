@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Kennisbeheer">
 <title>Cosmic Spirit — Kennisbeheer</title>
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -20,7 +19,7 @@
   body { background:var(--bg); color:var(--text); font-family:'Quicksand',sans-serif; min-height:100vh; }
   @keyframes spin { to { transform:rotate(360deg); } }
   button { font-family:'Quicksand',sans-serif; cursor:pointer; }
-  input, textarea, select { font-family:'Quicksand',sans-serif; }
+  input, textarea { font-family:'Quicksand',sans-serif; }
   input:focus, textarea:focus { outline:none; }
 </style>
 </head>
@@ -43,53 +42,115 @@ const AGENTEN = [
 ];
 
 const S = {
-  card: { background:"var(--card)", borderRadius:16, padding:"20px", border:"1px solid var(--border)", marginBottom:12 },
+  card: { background:"var(--card)", borderRadius:16, padding:"24px", border:"1px solid var(--border)" },
   label: { fontSize:11, color:"var(--text3)", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:8, fontWeight:600, display:"block" },
   input: { width:"100%", background:"var(--bg)", border:"1px solid var(--border2)", borderRadius:10, color:"var(--text)", padding:"11px 14px", fontSize:14, fontWeight:400 },
-  btn: (kleur, disabled) => ({
+};
+
+function btn(kleur, disabled) {
+  return {
     width:"100%", padding:"13px", borderRadius:12, border:"none",
     background: disabled ? "var(--bg2)" : kleur,
     color: disabled ? "var(--text3)" : "#fff",
-    fontSize:14, fontWeight:600, cursor: disabled ? "default" : "pointer",
-    transition:"all 0.2s"
-  }),
-};
+    fontSize:14, fontWeight:600,
+    cursor: disabled ? "default" : "pointer",
+    transition:"all 0.2s",
+  };
+}
 
+// ── LOGIN ─────────────────────────────────────────────────────────────────
+function LoginScherm({ onLogin }) {
+  const [code, setCode] = useState("");
+  const [fout, setFout] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const controleer = async () => {
+    setLoading(true); setFout(false);
+    try {
+      const res = await fetch(`${WORKER}/kennis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": code },
+        body: JSON.stringify({ agent: "astrologie" }),
+      });
+      if (res.status === 401) { setFout(true); }
+      else { sessionStorage.setItem("admin_token", code); onLogin(code); }
+    } catch { setFout(true); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <div style={{ width:"100%", maxWidth:360 }}>
+        <div style={{ textAlign:"center", marginBottom:40 }}>
+          <div style={{ fontSize:11, letterSpacing:"0.2em", color:"var(--text3)", textTransform:"uppercase", marginBottom:10, fontWeight:600 }}>Cosmic Spirit</div>
+          <h1 style={{ fontSize:28, fontWeight:600, color:"var(--text)" }}>Kennisbeheer</h1>
+        </div>
+        <div style={S.card}>
+          <span style={S.label}>Toegangscode</span>
+          <input
+            type="password"
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && controleer()}
+            placeholder="Voer je code in..."
+            autoFocus
+            style={{ ...S.input, fontSize:15, padding:"13px 16px", borderRadius:12, marginBottom:12 }}
+          />
+          {fout && <p style={{ fontSize:12, color:"var(--red)", marginBottom:12 }}>Toegangscode onjuist.</p>}
+          <button onClick={controleer} disabled={loading || !code.trim()} style={btn("var(--accent)", loading || !code.trim())}>
+            {loading ? "Controleren..." : "Inloggen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HOOFD APP ─────────────────────────────────────────────────────────────
 function App() {
+  const [token, setToken] = useState(() => sessionStorage.getItem("admin_token") || null);
+
+  if (!token) return <LoginScherm onLogin={setToken} />;
+  return <Beheer token={token} onLogout={() => { sessionStorage.removeItem("admin_token"); setToken(null); }} />;
+}
+
+function Beheer({ token, onLogout }) {
   const [agent, setAgent] = useState("astrologie");
   const [tab, setTab] = useState("url");
+  const [scherm, setScherm] = useState("toevoegen");
   const [url, setUrl] = useState("");
   const [tekst, setTekst] = useState("");
   const [categorie, setCategorie] = useState("");
-  const [status, setStatus] = useState(null); // null | loading | success | error
+  const [status, setStatus] = useState(null);
   const [bericht, setBericht] = useState("");
   const [items, setItems] = useState([]);
-  const [scherm, setScherm] = useState("toevoegen"); // toevoegen | kennisbank
+  const [itemsLoading, setItemsLoading] = useState(false);
 
   const actAgent = AGENTEN.find(a => a.key === agent);
+
+  const headers = { "Content-Type": "application/json", "X-Admin-Token": token };
 
   useEffect(() => { laadItems(); }, [agent]);
 
   const laadItems = async () => {
+    setItemsLoading(true);
     try {
-      const res = await fetch(`https://glvpyebivwsjqsrbfank.supabase.co/rest/v1/kennis?agent=eq.${agent}&order=aangemaakt_op.desc&select=*`, {
-        headers: {
-          "apikey": "sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
-          "Authorization": "Bearer sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
-        }
+      const res = await fetch(`${WORKER}/kennis`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ agent }),
       });
       const data = await res.json();
       setItems(Array.isArray(data) ? data : []);
     } catch { setItems([]); }
+    setItemsLoading(false);
   };
 
   const verwijder = async (id) => {
-    await fetch(`https://glvpyebivwsjqsrbfank.supabase.co/rest/v1/kennis?id=eq.${id}`, {
-      method: "DELETE",
-      headers: {
-        "apikey": "sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
-        "Authorization": "Bearer sb_publishable_EHihijC7mQYD8qpl1Gq9wA_8MC4Zx9L",
-      }
+    await fetch(`${WORKER}/kennis/verwijder`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ id }),
     });
     setItems(prev => prev.filter(i => i.id !== id));
   };
@@ -100,12 +161,12 @@ function App() {
       const body = {
         agent,
         categorie: categorie || "Algemeen",
-        ...(tab === "url" ? { bronUrl: url } : { tekst }),
+        ...(tab === "url" ? { bronUrl: url.trim() } : { tekst: tekst.trim() }),
       };
 
       const res = await fetch(`${WORKER}/leer`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(body),
       });
 
@@ -116,6 +177,7 @@ function App() {
         setBericht(`Opgeslagen — ${data.tekens} tekens toegevoegd aan ${actAgent.label}.`);
         setUrl(""); setTekst(""); setCategorie("");
         laadItems();
+        setScherm("kennisbank");
         setTimeout(() => setStatus(null), 4000);
       } else {
         setStatus("error");
@@ -127,16 +189,19 @@ function App() {
     }
   };
 
-  const kanOpslaan = status !== "loading" && (tab === "url" ? url.trim().length > 5 : tekst.trim().length > 50);
+  const kanOpslaan = status !== "loading" && (tab === "url" ? url.trim().length > 8 : tekst.trim().length > 50);
 
   return (
-    <div style={{ maxWidth:560, margin:"0 auto", padding:"32px 16px 60px" }}>
+    <div style={{ maxWidth:580, margin:"0 auto", padding:"32px 16px 60px" }}>
 
       {/* Header */}
-      <div style={{ marginBottom:28 }}>
-        <div style={{ fontSize:11, letterSpacing:"0.18em", color:"var(--text3)", textTransform:"uppercase", marginBottom:8, fontWeight:600 }}>Cosmic Spirit</div>
-        <h1 style={{ fontSize:24, fontWeight:600, color:"var(--text)" }}>Kennisbeheer</h1>
-        <p style={{ fontSize:13, color:"var(--text3)", marginTop:6, fontStyle:"italic" }}>Voed de agenten met websites, tekst of documenten.</p>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:28 }}>
+        <div>
+          <div style={{ fontSize:11, letterSpacing:"0.18em", color:"var(--text3)", textTransform:"uppercase", marginBottom:8, fontWeight:600 }}>Cosmic Spirit</div>
+          <h1 style={{ fontSize:24, fontWeight:600, color:"var(--text)" }}>Kennisbeheer</h1>
+          <p style={{ fontSize:13, color:"var(--text3)", marginTop:4, fontStyle:"italic" }}>Voed de agenten met websites, tekst of documenten.</p>
+        </div>
+        <button onClick={onLogout} style={{ background:"none", border:"none", color:"var(--text3)", fontSize:12, fontWeight:500, paddingTop:4 }}>Uitloggen</button>
       </div>
 
       {/* Agent kiezen */}
@@ -156,7 +221,7 @@ function App() {
       </div>
 
       {/* Scherm tabs */}
-      <div style={{ display:"flex", borderBottom:"1px solid var(--border)", marginBottom:20 }}>
+      <div style={{ display:"flex", borderBottom:"1px solid var(--border)", marginBottom:24 }}>
         {["toevoegen","kennisbank"].map(s => (
           <button key={s} onClick={() => setScherm(s)} style={{
             flex:1, padding:"10px", background:"transparent", border:"none",
@@ -169,24 +234,24 @@ function App() {
         ))}
       </div>
 
+      {/* TOEVOEGEN */}
       {scherm === "toevoegen" && (
         <div>
-          {/* Invoertype */}
-          <div style={{ display:"flex", gap:8, marginBottom:16 }}>
-            {["url","tekst"].map(t => (
-              <button key={t} onClick={() => setTab(t)} style={{
-                flex:1, padding:"10px", borderRadius:10,
-                border:`1.5px solid ${tab===t ? actAgent.kleur : "var(--border2)"}`,
-                background: tab===t ? `${actAgent.kleur}15` : "transparent",
-                color: tab===t ? actAgent.kleur : "var(--text2)",
+          <div style={{ display:"flex", gap:8, marginBottom:20 }}>
+            {[
+              { key:"url",   label:"🌐 Website / URL" },
+              { key:"tekst", label:"✏️ Tekst / PDF inhoud" },
+            ].map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)} style={{
+                flex:1, padding:"11px", borderRadius:10,
+                border:`1.5px solid ${tab===t.key ? actAgent.kleur : "var(--border2)"}`,
+                background: tab===t.key ? `${actAgent.kleur}15` : "transparent",
+                color: tab===t.key ? actAgent.kleur : "var(--text2)",
                 fontSize:13, fontWeight:600
-              }}>
-                {t === "url" ? "🌐 Website / URL" : "✏️ Tekst / PDF inhoud"}
-              </button>
+              }}>{t.label}</button>
             ))}
           </div>
 
-          {/* URL invoer */}
           {tab === "url" && (
             <div style={{ marginBottom:16 }}>
               <span style={S.label}>Website URL</span>
@@ -197,12 +262,11 @@ function App() {
                 style={S.input}
               />
               <p style={{ fontSize:12, color:"var(--text3)", marginTop:6, lineHeight:1.6 }}>
-                De agent leest de pagina automatisch uit en slaat de inhoud op in de kennisbank.
+                De agent leest de pagina automatisch uit en slaat de inhoud op.
               </p>
             </div>
           )}
 
-          {/* Tekst invoer */}
           {tab === "tekst" && (
             <div style={{ marginBottom:16 }}>
               <span style={S.label}>Tekst of PDF inhoud</span>
@@ -216,7 +280,6 @@ function App() {
             </div>
           )}
 
-          {/* Categorie */}
           <div style={{ marginBottom:20 }}>
             <span style={S.label}>Categorie (optioneel)</span>
             <input
@@ -227,7 +290,6 @@ function App() {
             />
           </div>
 
-          {/* Status */}
           {status === "success" && (
             <div style={{ background:"rgba(122,168,139,0.15)", border:"1px solid rgba(122,168,139,0.4)", borderRadius:10, padding:"12px 16px", fontSize:13, color:"var(--green)", fontWeight:500, marginBottom:16 }}>
               ✓ {bericht}
@@ -239,7 +301,7 @@ function App() {
             </div>
           )}
 
-          <button onClick={voegToe} disabled={!kanOpslaan} style={S.btn(actAgent.kleur, !kanOpslaan)}>
+          <button onClick={voegToe} disabled={!kanOpslaan} style={btn(actAgent.kleur, !kanOpslaan)}>
             {status === "loading" ? (
               <span style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
                 <span style={{ width:16, height:16, borderRadius:"50%", border:"2px solid rgba(255,255,255,0.3)", borderTop:"2px solid #fff", animation:"spin 1s linear infinite", display:"inline-block" }}/>
@@ -250,15 +312,20 @@ function App() {
         </div>
       )}
 
+      {/* KENNISBANK */}
       {scherm === "kennisbank" && (
         <div>
-          {items.length === 0 ? (
+          {itemsLoading ? (
+            <div style={{ display:"flex", justifyContent:"center", padding:"40px 0" }}>
+              <div style={{ width:28, height:28, borderRadius:"50%", border:"2px solid var(--bg2)", borderTop:`2px solid ${actAgent.kleur}`, animation:"spin 1.2s linear infinite" }}/>
+            </div>
+          ) : items.length === 0 ? (
             <div style={{ textAlign:"center", padding:"48px 0", color:"var(--text3)", fontStyle:"italic", fontSize:14 }}>
               Nog geen kennis toegevoegd voor {actAgent.label}.
             </div>
           ) : (
             items.map(item => (
-              <KennisItem key={item.id} item={item} onVerwijder={verwijder} kleur={actAgent.kleur} />
+              <KennisItem key={item.id} item={item} kleur={actAgent.kleur} onVerwijder={verwijder} />
             ))
           )}
         </div>
@@ -267,7 +334,7 @@ function App() {
   );
 }
 
-function KennisItem({ item, onVerwijder, kleur }) {
+function KennisItem({ item, kleur, onVerwijder }) {
   const [open, setOpen] = useState(false);
   const [bevestig, setBevestig] = useState(false);
 
@@ -286,7 +353,7 @@ function KennisItem({ item, onVerwijder, kleur }) {
             display:"-webkit-box", WebkitLineClamp: open ? "unset" : 2,
             WebkitBoxOrient:"vertical", overflow: open ? "visible" : "hidden"
           }}>
-            {item.bron ? `🌐 ${item.bron}` : item.inhoud}
+            {item.bron ? `🌐 ${item.bron}` : item.inhoud?.substring(0, 120) + "..."}
           </div>
           <div style={{ fontSize:11, color:"var(--text3)", marginTop:4 }}>
             {new Date(item.aangemaakt_op).toLocaleDateString("nl-NL", { day:"numeric", month:"long", year:"numeric" })}
@@ -298,18 +365,16 @@ function KennisItem({ item, onVerwijder, kleur }) {
 
       {open && (
         <div style={{ padding:"0 16px 14px", borderTop:"1px solid var(--border)" }}>
-          {item.bron && (
-            <p style={{ fontSize:12, color:"var(--text2)", marginTop:10, marginBottom:8, lineHeight:1.6, fontStyle:"italic" }}>
-              {item.inhoud?.substring(0, 300)}...
-            </p>
-          )}
+          <p style={{ fontSize:12, color:"var(--text2)", marginTop:10, lineHeight:1.7 }}>
+            {item.inhoud?.substring(0, 400)}{item.inhoud?.length > 400 ? "..." : ""}
+          </p>
           {bevestig ? (
-            <div style={{ display:"flex", gap:8, marginTop:10 }}>
+            <div style={{ display:"flex", gap:8, marginTop:12 }}>
               <button onClick={() => { onVerwijder(item.id); setBevestig(false); }} style={{ flex:1, padding:"8px", borderRadius:8, border:"none", background:"var(--red)", color:"#fff", fontSize:12, fontWeight:600 }}>Ja, verwijder</button>
               <button onClick={() => setBevestig(false)} style={{ flex:1, padding:"8px", borderRadius:8, border:"1px solid var(--border2)", background:"transparent", color:"var(--text2)", fontSize:12 }}>Annuleren</button>
             </div>
           ) : (
-            <button onClick={() => setBevestig(true)} style={{ marginTop:10, background:"none", border:"none", color:"var(--text3)", fontSize:12, fontWeight:500, padding:0 }}>Verwijderen</button>
+            <button onClick={() => setBevestig(true)} style={{ marginTop:12, background:"none", border:"none", color:"var(--text3)", fontSize:12, fontWeight:500, padding:0 }}>Verwijderen</button>
           )}
         </div>
       )}
